@@ -48,6 +48,8 @@ Projeto desenvolvido para a disciplina N392 - Projeto Aplicado Plataformas Web (
 
 ## 📂 Arquitetura do Projeto
 
+## 📂 Arquitetura do Projeto
+
 ```text
 openest-mobile/
 ├── src/
@@ -60,40 +62,40 @@ openest-mobile/
 ├── App.js            # Entry point do Expo
 ├── app.json          # Metadados do app (Splash, ícones)
 └── package.json      # Dependências
+```
+
+---
 
 ## ⚙️ Instalação e Execução
 
 1. **Clone o repositório:**
    ```bash
-   git clone [https://github.com/SeuUsuario/openest-mobile.git](https://github.com/SeuUsuario/openest-mobile.git)
+   git clone https://github.com/SeuUsuario/openest-mobile.git
    cd openest-mobile
+   ```
 
-   ⚙️ Instalação e Execução
-Clone o repositório:
+2. **Instale as dependências:**
+   ```bash
+   npm install
+   ```
 
-Bash
-git clone [https://github.com/SeuUsuario/openest-mobile.git](https://github.com/SeuUsuario/openest-mobile.git)
-cd openest-mobile
-Instale as dependências:
+3. **Configure as variáveis de ambiente:**
+   Crie um arquivo `.env` na raiz do projeto:
+   ```env
+   EXPO_PUBLIC_API_URL=http://localhost:3000
+   ```
 
-Bash
-npm install
-Configure as variáveis de ambiente:
-Crie um arquivo .env na raiz do projeto:
+4. **Inicie o servidor de desenvolvimento:**
+   ```bash
+   npx expo start
+   ```
 
-Snippet de código
-EXPO_PUBLIC_API_URL=http://localhost:3000
-Inicie o servidor de desenvolvimento:
+---
 
-Bash
-npx expo start
-🔀 Fluxo Git (Branching & PRs)
-Branch principal: main (protegida para builds estáveis).
+## 🔀 Fluxo Git (Branching & PRs)
 
-Padrão de Branches:
-
-Novas features: feat/nome-da-funcionalidade
-
-Correções de bugs: fix/nome-do-bug
-
-Pull Requests: Obrigatórios para merge na main, necessitando de pelo menos uma aprovação da equipe.
+* **Branch principal:** `main` (protegida para builds estáveis).
+* **Padrão de Branches:**
+  * **Novas features:** `feat/nome-da-funcionalidade`
+  * **Correções de bugs:** `fix/nome-do-bug`
+* **Pull Requests:** Obrigatórios para merge na `main`, necessitando de pelo menos uma aprovação da equipe.
