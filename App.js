@@ -1,22 +1,34 @@
-import React from 'react';
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import "react-native-gesture-handler"; // precisa ser o 1º import do arquivo
+import React from "react";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { NavigationContainer, DarkTheme } from "@react-navigation/native";
+
+import Routes from "./src/routes";
+import { ToastProvider } from "./src/components";
+import { colors } from "./src/styles/theme";
+
+const navigationTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: colors.background,
+    card: colors.surface,
+    primary: colors.primary,
+    text: colors.text,
+    border: colors.border,
+  },
+};
 
 export default function App() {
   return (
-    <SafeAreaView style={styles.container}>
-      <Text>Openest Mobile - Fundação Pronta!</Text>
-      <StatusBar style="auto" />
-    </SafeAreaView>
+    <SafeAreaProvider>
+      <ToastProvider>
+        <NavigationContainer theme={navigationTheme}>
+          <StatusBar style="light" />
+          <Routes />
+        </NavigationContainer>
+      </ToastProvider>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
