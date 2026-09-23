@@ -6,7 +6,7 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { colors } from "../styles/theme";
 
-import Login from "../screens/Auth/Login";
+import Login from "../screens/Login"; // T011: agora usa a tela real da T010 (antes: ../screens/Auth/Login, placeholder)
 import Register from "../screens/Auth/Register";
 import ForgotPassword from "../screens/Auth/ForgotPassword";
 
