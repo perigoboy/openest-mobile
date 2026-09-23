@@ -19,6 +19,15 @@ export default function Register({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [relationshipStatus, setRelationshipStatus] = useState('solteiro');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+  // Função auxiliar para simular a abertura dos Termos de Uso
+  function handleOpenTerms() {
+    Alert.alert(
+      'Termos de Uso e Política de Privacidade',
+      'Em conformidade com a LGPD, seus dados de perfil e relacionamento são tratados com segurança e criptografia para o funcionamento do Openest Mobile.'
+    );
+  }
 
   async function handleRegister() {
     if (!name.trim() || !email.trim() || !password.trim()) {
@@ -26,13 +35,18 @@ export default function Register({ navigation }) {
       return;
     }
 
+    if (!acceptedTerms) {
+      Alert.alert('Consentimento Obrigatório', 'Você precisa aceitar os Termos de Uso e a Política de Privacidade para prosseguir.');
+      return;
+    }
+
     try {
-      // Ajuste a rota para o endpoint de cadastro da API de vocês
       await api.post('/users', {
         name,
         email,
         password,
         relationshipStatus,
+        acceptedTerms,
       });
 
       Alert.alert('Sucesso', 'Conta criada com sucesso! Faça login para continuar.');
@@ -94,6 +108,20 @@ export default function Register({ navigation }) {
                 <Picker.Item label="Casado(a) / Em um relacionamento" value="relacionamento" />
                 <Picker.Item label="Outro" value="outro" />
               </Picker>
+            </View>
+
+            {/* Checkbox de Termos de Uso (LGPD) */}
+            <View style={styles.termsContainer}>
+              <TouchableOpacity
+                style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}
+                onPress={() => setAcceptedTerms(!acceptedTerms)}
+              />
+              <View style={styles.termsTextContainer}>
+                <Text style={styles.termsText}>Li e concordo com os </Text>
+                <TouchableOpacity onPress={handleOpenTerms}>
+                  <Text style={styles.termsLink}>Termos de Uso e LGPD</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <TouchableOpacity style={styles.button} onPress={handleRegister}>
@@ -163,12 +191,43 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#dcdde1',
-    marginBottom: 20,
+    marginBottom: 16,
     overflow: 'hidden',
   },
   picker: {
     height: 50,
     width: '100%',
+  },
+  termsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#0984e3',
+    marginRight: 12,
+    backgroundColor: '#fff',
+  },
+  checkboxChecked: {
+    backgroundColor: '#0984e3',
+  },
+  termsTextContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    flex: 1,
+  },
+  termsText: {
+    fontSize: 14,
+    color: '#576574',
+  },
+  termsLink: {
+    fontSize: 14,
+    color: '#0984e3',
+    fontWeight: 'bold',
   },
   button: {
     backgroundColor: '#0984e3',
