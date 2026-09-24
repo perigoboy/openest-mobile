@@ -31,9 +31,10 @@ export function AuthProvider({ children }) {
   // Função de Login
   async function signIn(email, password) {
     try {
-      // Ajuste a rota '/auth/login' conforme o padrão da API de vocês
-      const response = await api.post('/auth/login', { email, password });
-      
+      // T011: rota real do backend é POST /api/users/login (ver server.js:
+      // app.use("/api/users", userRoutes) + userRoutes.js: router.post('/login', ...))
+      const response = await api.post('/api/users/login', { email, password });
+
       const { token, user: userData } = response.data;
 
       // Salva de forma segura no SecureStore

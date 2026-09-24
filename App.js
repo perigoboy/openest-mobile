@@ -6,6 +6,7 @@ import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 
 import Routes from "./src/routes";
 import { ToastProvider } from "./src/components";
+import { AuthProvider } from "./src/contexts/AuthContext";
 import { colors } from "./src/styles/theme";
 
 const navigationTheme = {
@@ -24,10 +25,12 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ToastProvider>
-        <NavigationContainer theme={navigationTheme}>
-          <StatusBar style="light" />
-          <Routes />
-        </NavigationContainer>
+        <AuthProvider>
+          <NavigationContainer theme={navigationTheme}>
+            <StatusBar style="light" />
+            <Routes />
+          </NavigationContainer>
+        </AuthProvider>
       </ToastProvider>
     </SafeAreaProvider>
   );
