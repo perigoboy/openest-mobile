@@ -48,6 +48,33 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // Função de Cadastro (T012)
+  async function signUp(name, email, password, statusRelacionamento) {
+    try {
+      // Rota real: POST /api/users/register (server.js: app.use("/api/users", userRoutes)).
+      // O backend hoje só lê name/email/password (ver userController.js) — status_relacionamento
+      // é enviado para já deixar o cliente pronto, mas ainda não é persistido pela API.
+      const response = await api.post('/api/users/register', {
+        name,
+        email,
+        password,
+        status_relacionamento: statusRelacionamento,
+      });
+
+      const { token, user: userData } = response.data;
+
+      // Auto-login: reaproveita o mesmo mecanismo do signIn, sem precisar
+      // de uma segunda chamada de rede para /login.
+      await SecureStore.setItemAsync('user_token', token);
+      await SecureStore.setItemAsync('user_data', JSON.stringify(userData));
+
+      setUser(userData);
+    } catch (error) {
+      console.error('Erro no cadastro:', error);
+      throw error;
+    }
+  }
+
   // Função de Logout
   async function signOut() {
     try {
@@ -60,7 +87,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ signed: !!user, user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ signed: !!user, user, loading, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

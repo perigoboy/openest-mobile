@@ -6,8 +6,8 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { colors } from "../styles/theme";
 
-import Login from "../screens/Login"; // T011: agora usa a tela real da T010 (antes: ../screens/Auth/Login, placeholder)
-import Register from "../screens/Auth/Register";
+import Login from "../screens/Login"; // T011: tela real da T010
+import Register from "../screens/Register"; // T012: tela real da T010 (antes: ../screens/Auth/Register, placeholder)
 import ForgotPassword from "../screens/Auth/ForgotPassword";
 
 const Stack = createNativeStackNavigator();
