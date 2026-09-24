@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Picker } from '@react-native-picker/picker';
-import api from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function Register({ navigation }) {
   const [name, setName] = useState('');
@@ -20,6 +20,8 @@ export default function Register({ navigation }) {
   const [password, setPassword] = useState('');
   const [relationshipStatus, setRelationshipStatus] = useState('solteiro');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const { signUp } = useAuth();
 
   // Função auxiliar para simular a abertura dos Termos de Uso
   function handleOpenTerms() {
@@ -35,25 +37,31 @@ export default function Register({ navigation }) {
       return;
     }
 
+    // T012: mesma regra de senha mínima que o backend aplica (userController.js),
+    // evita uma ida e volta de rede só para descobrir que a senha é curta demais.
+    if (password.length < 6) {
+      Alert.alert('Atenção', 'A senha precisa ter no mínimo 6 caracteres.');
+      return;
+    }
+
     if (!acceptedTerms) {
       Alert.alert('Consentimento Obrigatório', 'Você precisa aceitar os Termos de Uso e a Política de Privacidade para prosseguir.');
       return;
     }
 
+    setSubmitting(true);
     try {
-      await api.post('/users', {
-        name,
-        email,
-        password,
-        relationshipStatus,
-        acceptedTerms,
-      });
-
-      Alert.alert('Sucesso', 'Conta criada com sucesso! Faça login para continuar.');
-      navigation.goBack();
+      // T012: signUp já dispara o POST correto (/api/users/register) e faz o
+      // auto-login salvando o token — a troca para o AppRoutes acontece
+      // sozinha (ver src/routes/index.js), sem precisar navegar manualmente.
+      await signUp(name, email, password, relationshipStatus);
     } catch (error) {
-      console.error('Erro no cadastro:', error);
-      Alert.alert('Erro', 'Não foi possível realizar o cadastro. Tente novamente.');
+      // O backend do cadastro responde erros na chave `error` (diferente do
+      // login, que usa `message`) — ver userController.js.
+      const backendMessage = error?.response?.data?.error;
+      Alert.alert('Erro no cadastro', backendMessage || 'Não foi possível realizar o cadastro. Tente novamente.');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -124,8 +132,12 @@ export default function Register({ navigation }) {
               </View>
             </View>
 
-            <TouchableOpacity style={styles.button} onPress={handleRegister}>
-              <Text style={styles.buttonText}>Cadastrar</Text>
+            <TouchableOpacity
+              style={[styles.button, submitting && styles.buttonDisabled]}
+              onPress={handleRegister}
+              disabled={submitting}
+            >
+              <Text style={styles.buttonText}>{submitting ? 'Cadastrando...' : 'Cadastrar'}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -236,6 +248,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   buttonText: {
     color: '#fff',
