@@ -43,6 +43,7 @@ export default function Login({ navigation }) {
 
         <View style={styles.formContainer}>
           <TextInput
+            testID="input-email"
             style={styles.input}
             placeholder="E-mail"
             placeholderTextColor="#888"
@@ -53,6 +54,7 @@ export default function Login({ navigation }) {
           />
 
           <TextInput
+            testID="input-password"
             style={styles.input}
             placeholder="Senha"
             placeholderTextColor="#888"
@@ -61,12 +63,19 @@ export default function Login({ navigation }) {
             onChangeText={setPassword}
           />
 
-          <TouchableOpacity style={styles.button} onPress={handleLogin}>
+          <TouchableOpacity
+            testID="btn-submit"
+            accessibilityRole="button"
+            style={styles.button}
+            onPress={handleLogin}
+          >
             <Text style={styles.buttonText}>Entrar</Text>
           </TouchableOpacity>
 
           {/* T013: entrada para o fluxo de recuperação de senha */}
           <TouchableOpacity
+            testID="link-forgot"
+            accessibilityRole="button"
             style={styles.forgotPasswordLink}
             onPress={() => navigation.navigate('ForgotPassword')}
           >
@@ -74,6 +83,8 @@ export default function Login({ navigation }) {
           </TouchableOpacity>
 
           <TouchableOpacity
+            testID="link-register"
+            accessibilityRole="button"
             style={styles.registerLink}
             onPress={() => navigation.navigate('Register')}
           >

@@ -79,6 +79,7 @@ export default function Register({ navigation }) {
 
           <View style={styles.formContainer}>
             <TextInput
+              testID="input-name"
               style={styles.input}
               placeholder="Nome Completo"
               placeholderTextColor="#888"
@@ -87,6 +88,7 @@ export default function Register({ navigation }) {
             />
 
             <TextInput
+              testID="input-email"
               style={styles.input}
               placeholder="E-mail"
               placeholderTextColor="#888"
@@ -97,6 +99,7 @@ export default function Register({ navigation }) {
             />
 
             <TextInput
+              testID="input-password"
               style={styles.input}
               placeholder="Senha"
               placeholderTextColor="#888"
@@ -106,7 +109,7 @@ export default function Register({ navigation }) {
             />
 
             <Text style={styles.label}>Status de Relacionamento</Text>
-            <View style={styles.pickerContainer}>
+            <View testID="picker-relationship" style={styles.pickerContainer}>
               <Picker
                 selectedValue={relationshipStatus}
                 onValueChange={(itemValue) => setRelationshipStatus(itemValue)}
@@ -121,18 +124,22 @@ export default function Register({ navigation }) {
             {/* Checkbox de Termos de Uso (LGPD) */}
             <View style={styles.termsContainer}>
               <TouchableOpacity
+                testID="checkbox-terms"
+                accessibilityRole="button"
                 style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}
                 onPress={() => setAcceptedTerms(!acceptedTerms)}
               />
               <View style={styles.termsTextContainer}>
                 <Text style={styles.termsText}>Li e concordo com os </Text>
-                <TouchableOpacity onPress={handleOpenTerms}>
+                <TouchableOpacity testID="link-terms" onPress={handleOpenTerms}>
                   <Text style={styles.termsLink}>Termos de Uso e LGPD</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
             <TouchableOpacity
+              testID="btn-submit"
+              accessibilityRole="button"
               style={[styles.button, submitting && styles.buttonDisabled]}
               onPress={handleRegister}
               disabled={submitting}
@@ -141,6 +148,8 @@ export default function Register({ navigation }) {
             </TouchableOpacity>
 
             <TouchableOpacity
+              testID="link-login"
+              accessibilityRole="button"
               style={styles.backLink}
               onPress={() => navigation.goBack()}
             >
