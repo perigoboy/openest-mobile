@@ -65,6 +65,14 @@ export default function Login({ navigation }) {
             <Text style={styles.buttonText}>Entrar</Text>
           </TouchableOpacity>
 
+          {/* T013: entrada para o fluxo de recuperação de senha */}
+          <TouchableOpacity
+            style={styles.forgotPasswordLink}
+            onPress={() => navigation.navigate('ForgotPassword')}
+          >
+            <Text style={styles.forgotPasswordText}>Esqueceu sua senha?</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.registerLink}
             onPress={() => navigation.navigate('Register')}
@@ -134,6 +142,14 @@ const styles = StyleSheet.create({
   },
   registerText: {
     color: '#0984e3',
+    fontSize: 14,
+  },
+  forgotPasswordLink: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  forgotPasswordText: {
+    color: '#576574',
     fontSize: 14,
   },
 });
