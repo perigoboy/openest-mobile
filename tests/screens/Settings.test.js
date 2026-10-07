@@ -14,6 +14,46 @@ jest.mock('../../src/contexts/AuthContext', () => ({
   }),
 }));
 
+// ---------------------------------------------------------------
+// T024 — mocks da API LGPD (exportação e exclusão de conta)
+// ---------------------------------------------------------------
+const mockApiGet = jest.fn();
+const mockApiDelete = jest.fn();
+
+jest.mock('../../src/services/api', () => ({
+  __esModule: true,
+  default: {
+    get: (...args) => mockApiGet(...args),
+    delete: (...args) => mockApiDelete(...args),
+  },
+}));
+
+// T024 — expo-file-system grava o JSON e expo-sharing abre a folha do sistema.
+const mockFileCreate = jest.fn();
+const mockFileWrite = jest.fn();
+const mockIsAvailableAsync = jest.fn();
+const mockShareAsync = jest.fn();
+
+jest.mock('expo-file-system', () => {
+  class File {
+    constructor() {
+      this.uri = 'file:///cache/dados_openest.json';
+    }
+    create(...args) {
+      return mockFileCreate(...args);
+    }
+    write(...args) {
+      return mockFileWrite(...args);
+    }
+  }
+  return { File, Paths: { cache: 'file:///cache' } };
+});
+
+jest.mock('expo-sharing', () => ({
+  isAvailableAsync: (...args) => mockIsAvailableAsync(...args),
+  shareAsync: (...args) => mockShareAsync(...args),
+}));
+
 import React from 'react';
 import { Alert } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
@@ -56,6 +96,15 @@ beforeEach(() => {
   // SecureStore.getItemAsync começa sem preferência salva (padrão: ativadas).
   SecureStore.getItemAsync.mockResolvedValue(undefined);
   SecureStore.setItemAsync.mockResolvedValue(undefined);
+  // T024 — padrões de sucesso das rotas LGPD.
+  mockApiGet.mockResolvedValue({
+    data: { perfil: { name: 'Ana', email: 'ana@openest.com' }, matches: [], mensagens: [] },
+  });
+  mockApiDelete.mockResolvedValue({
+    data: { message: 'Sua conta foi excluída e seus dados anonimizados com sucesso.' },
+  });
+  mockIsAvailableAsync.mockResolvedValue(true);
+  mockShareAsync.mockResolvedValue(undefined);
 });
 
 describe('Settings — agrupamento das ações de conta', () => {
@@ -232,22 +281,119 @@ describe('Settings — sair (logout via AuthContext)', () => {
   });
 });
 
-describe('Settings — demais ações de conta', () => {
+describe('Settings — meus dados (LGPD) (T024)', () => {
+  it('abre o modal de portabilidade/exclusão ao tocar em "Meus dados"', async () => {
+    renderSettings();
+    await pressButton('btn-data-privacy');
+
+    // Modal aberto: as duas ações da LGPD ficam disponíveis.
+    expect(screen.getByTestId('btn-download-data')).toBeTruthy();
+    expect(screen.getByTestId('btn-delete-account')).toBeTruthy();
+    expect(screen.getByTestId('btn-cancel-privacy')).toBeTruthy();
+    // O título existe no menu e no modal (navegação + cabeçalho).
+    expect(screen.getAllByText('Meus dados (LGPD)').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('"Baixar meus dados" dispara GET na rota de exportação e compartilha o JSON', async () => {
+    renderSettings();
+    await pressButton('btn-data-privacy');
+    await pressButton('btn-download-data');
+
+    // Critério de aceite: GET para a rota de exportação.
+    await waitFor(() =>
+      expect(mockApiGet).toHaveBeenCalledWith('/api/users/exportar-dados')
+    );
+    expect(mockFileCreate).toHaveBeenCalled();
+    expect(mockFileWrite).toHaveBeenCalledWith(expect.stringContaining('"perfil"'));
+    await waitFor(() => expect(mockShareAsync).toHaveBeenCalledTimes(1));
+    expect(mockShareAsync.mock.calls[0][0]).toBe('file:///cache/dados_openest.json');
+    expect(mockSignOut).not.toHaveBeenCalled();
+  });
+
+  it('mostra o erro da API quando a exportação falha', async () => {
+    mockApiGet.mockRejectedValue({ response: { data: { error: 'Exportação indisponível.' } } });
+
+    renderSettings();
+    await pressButton('btn-data-privacy');
+    await pressButton('btn-download-data');
+
+    await waitFor(() =>
+      expect(Alert.alert).toHaveBeenCalledWith('Erro', 'Exportação indisponível.')
+    );
+    expect(mockShareAsync).not.toHaveBeenCalled();
+    expect(mockSignOut).not.toHaveBeenCalled();
+  });
+
+  it('"Excluir conta" pede confirmação antes de qualquer ação', async () => {
+    renderSettings();
+    await pressButton('btn-data-privacy');
+    await pressButton('btn-delete-account');
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Excluir conta',
+      expect.any(String),
+      expect.any(Array)
+    );
+    expect(mockApiDelete).not.toHaveBeenCalled();
+    expect(mockSignOut).not.toHaveBeenCalled();
+  });
+
+  it('não exclui a conta ao cancelar a confirmação', async () => {
+    renderSettings();
+    await pressButton('btn-data-privacy');
+    await pressButton('btn-delete-account');
+
+    const [, , buttons] = lastAlert();
+    const cancel = buttons.find((button) => button.text === 'Cancelar');
+    expect(cancel).toBeTruthy();
+    expect(mockApiDelete).not.toHaveBeenCalled();
+    expect(mockSignOut).not.toHaveBeenCalled();
+  });
+
+  it('exclui a conta (DELETE) e limpa a sessão ao confirmar — irrevogável', async () => {
+    renderSettings();
+    await pressButton('btn-data-privacy');
+    await pressButton('btn-delete-account');
+
+    const [, , buttons] = lastAlert();
+    const confirm = buttons.find((button) => button.text === 'Excluir');
+    await act(async () => {
+      await confirm.onPress();
+    });
+
+    // Critério de aceite: exclusão disparada e sessão limpa no clique.
+    await waitFor(() => expect(mockApiDelete).toHaveBeenCalledWith('/api/users/conta'));
+    await waitFor(() => expect(mockSignOut).toHaveBeenCalledTimes(1));
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Conta excluída',
+      'Sua conta foi excluída e seus dados anonimizados com sucesso.'
+    );
+  });
+
+  it('mantém a sessão quando a API recusa a exclusão', async () => {
+    mockApiDelete.mockRejectedValue({ response: { data: { error: 'Sem conexão.' } } });
+
+    renderSettings();
+    await pressButton('btn-data-privacy');
+    await pressButton('btn-delete-account');
+
+    const [, , buttons] = lastAlert();
+    const confirm = buttons.find((button) => button.text === 'Excluir');
+    await act(async () => {
+      await confirm.onPress();
+    });
+
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledWith('Erro', 'Sem conexão.'));
+    expect(mockSignOut).not.toHaveBeenCalled();
+  });
+});
+
+describe('Settings — verificação de foto (T023)', () => {
   it('navega para a tela de selfie na verificação de foto (T023)', async () => {
     renderSettings();
     await pressButton('btn-photo-verification');
 
     expect(mockNavigate).toHaveBeenCalledWith('PhotoVerification');
-    expect(mockSignOut).not.toHaveBeenCalled();
-  });
-
-  it('mostra feedback de "em breve" em meus dados / LGPD (T024)', async () => {
-    renderSettings();
-    await pressButton('btn-data-privacy');
-
-    expect(
-      screen.getByText('Em breve: exclusão de conta e portabilidade de dados.')
-    ).toBeTruthy();
     expect(mockSignOut).not.toHaveBeenCalled();
   });
 });
