@@ -18,6 +18,7 @@ import Matches from "../screens/Matches";
 import Chat from "../screens/Chat";
 import Profile from "../screens/Profile";
 import Settings from "../screens/Settings"; // T025: tela real da configuração
+import PhotoVerification from "../screens/PhotoVerification"; // T023: fluxo de selfie
 
 const Tab = createBottomTabNavigator();
 
@@ -60,6 +61,16 @@ export default function AppRoutes() {
       />
       <Tab.Screen name="Profile" component={Profile} options={{ title: "Perfil" }} />
       <Tab.Screen name="Settings" component={Settings} options={{ title: "Configurações" }} />
+      {/*
+        T023 — Verificação de selfie: mesma tática do Chat (rota fora da tab
+        bar visível) para abrir a tela cheia de verificação a partir do item
+        "Verificação de foto" das Configurações.
+      */}
+      <Tab.Screen
+        name="PhotoVerification"
+        component={PhotoVerification}
+        options={{ tabBarButton: () => null, tabBarStyle: { display: "none" } }}
+      />
     </Tab.Navigator>
   );
 }
