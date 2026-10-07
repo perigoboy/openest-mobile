@@ -30,7 +30,8 @@
           "cameraPermission": "O Openest usa a camera para voce tirar uma foto de perfil.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-sharing"
     ]
   }
 }

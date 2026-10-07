@@ -1,6 +1,8 @@
 // tests/screens/Profile.test.js
 // T020 — troca de foto de perfil pela galeria/câmera com upload em FormData
 // para POST /api/users/upload-photo (o backend salva no Cloudinary).
+// T022 — Modo Discreto: Switch que dispara PATCH /api/users/perfil para a
+// flag modo_discreto, com aviso de impacto e rollback em caso de erro.
 
 const mockLaunchImageLibraryAsync = jest.fn();
 const mockLaunchCameraAsync = jest.fn();
@@ -17,7 +19,6 @@ jest.mock('expo-image-picker', () => ({
 
 const mockGet = jest.fn();
 const mockPost = jest.fn();
-const mockPut = jest.fn();
 
 jest.mock('../../src/services/api', () => ({
   __esModule: true,
