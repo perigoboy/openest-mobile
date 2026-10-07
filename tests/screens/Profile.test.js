@@ -1,6 +1,8 @@
 // tests/screens/Profile.test.js
 // T020 — troca de foto de perfil pela galeria/câmera com upload em FormData
 // para POST /api/users/upload-photo (o backend salva no Cloudinary).
+// T022 — Modo Discreto: Switch que dispara PATCH /api/users/perfil para a
+// flag modo_discreto, com aviso de impacto e rollback em caso de erro.
 
 const mockLaunchImageLibraryAsync = jest.fn();
 const mockLaunchCameraAsync = jest.fn();
@@ -17,12 +19,14 @@ jest.mock('expo-image-picker', () => ({
 
 const mockGet = jest.fn();
 const mockPost = jest.fn();
+const mockPatch = jest.fn();
 
 jest.mock('../../src/services/api', () => ({
   __esModule: true,
   default: {
     get: (...args) => mockGet(...args),
     post: (...args) => mockPost(...args),
+    patch: (...args) => mockPatch(...args),
   },
 }));
 
@@ -47,6 +51,15 @@ import Profile from '../../src/screens/Profile';
 
 const CLOUDINARY_URL =
   'https://res.cloudinary.com/openest/image/upload/v1/openest_uploads/foto.jpg';
+
+// Texto de impacto devolvido pela API no PATCH (T022).
+const IMPACTO_ATIVADO =
+  'Seu perfil deixa de aparecer no Discovery para todos os usuários. ' +
+  'Matches e conversas ativos continuam funcionando e seu nome fica oculto ' +
+  'nas notificações de mensagem.';
+const IMPACTO_DESATIVADO =
+  'Seu perfil volta a aparecer no Discovery e seu nome volta a ser exibido ' +
+  'nas notificações de mensagem.';
 
 function renderProfile() {
   render(<Profile navigation={{ navigate: jest.fn(), goBack: jest.fn() }} />);
@@ -93,6 +106,13 @@ beforeEach(() => {
   mockRequestCameraPermissionsAsync.mockResolvedValue({ granted: true });
   mockPost.mockResolvedValue({
     data: { message: 'Foto de perfil atualizada com sucesso!', url: CLOUDINARY_URL },
+  });
+  mockPatch.mockResolvedValue({
+    data: {
+      message: 'Modo Discreto ativado com sucesso!',
+      modo_discreto: true,
+      impacto: IMPACTO_ATIVADO,
+    },
   });
 });
 
@@ -281,6 +301,111 @@ describe('Perfil — cancelamento e erros do upload (T020)', () => {
     // uploading volta a false: o texto de envio some e o botão reage de novo
     expect(screen.queryByText('Enviando foto...')).toBeNull();
     expect(hasImageWithUri(CLOUDINARY_URL)).toBe(false);
+  });
+});
+
+describe('Perfil — Modo Discreto (T022)', () => {
+  it('carrega o modo_discreto salvo no banco e reflete no Switch', async () => {
+    mockGet.mockResolvedValue({
+      data: { name: 'Ana', email: 'ana@openest.com', foto_url: '', modo_discreto: true },
+    });
+
+    renderProfile();
+
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/users/perfil'));
+    await waitFor(() =>
+      expect(screen.getByTestId('switch-modo-discreto').props.value).toBe(true)
+    );
+    // Status visível para o usuário (impacto no card)
+    expect(screen.getByText('Ativado — perfil oculto no Discovery')).toBeTruthy();
+  });
+
+  it('inicia desativado quando a API não devolve a flag', async () => {
+    renderProfile();
+
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByTestId('switch-modo-discreto').props.value).toBe(false)
+    );
+    expect(screen.getByText('Desativado — perfil visível no Discovery')).toBeTruthy();
+  });
+
+  it('dispara PATCH /api/users/perfil ao ativar e avisa o usuário do impacto', async () => {
+    renderProfile();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+
+    await act(async () => {
+      fireEvent(screen.getByTestId('switch-modo-discreto'), 'valueChange', true);
+    });
+
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledTimes(1));
+    const [endpoint, body] = mockPatch.mock.calls[0];
+    expect(endpoint).toBe('/api/users/perfil');
+    expect(body).toEqual({ modo_discreto: true });
+
+    expect(screen.getByTestId('switch-modo-discreto').props.value).toBe(true);
+    expect(Alert.alert).toHaveBeenCalledWith('Modo Discreto ativado', IMPACTO_ATIVADO);
+  });
+
+  it('desativa com PATCH false e informa que o perfil volta ao Discovery', async () => {
+    mockGet.mockResolvedValue({
+      data: { name: 'Ana', email: 'ana@openest.com', foto_url: '', modo_discreto: true },
+    });
+    mockPatch.mockResolvedValue({
+      data: { message: 'Modo Discreto desativado com sucesso!', modo_discreto: false, impacto: IMPACTO_DESATIVADO },
+    });
+
+    renderProfile();
+    await waitFor(() =>
+      expect(screen.getByTestId('switch-modo-discreto').props.value).toBe(true)
+    );
+
+    await act(async () => {
+      fireEvent(screen.getByTestId('switch-modo-discreto'), 'valueChange', false);
+    });
+
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledTimes(1));
+    expect(mockPatch.mock.calls[0][1]).toEqual({ modo_discreto: false });
+    expect(screen.getByTestId('switch-modo-discreto').props.value).toBe(false);
+    expect(Alert.alert).toHaveBeenCalledWith('Modo Discreto desativado', IMPACTO_DESATIVADO);
+  });
+
+  it('reverte o Switch e mostra o erro quando a API recusa', async () => {
+    mockPatch.mockRejectedValue({ response: { data: { error: 'Sem conexão.' } } });
+
+    renderProfile();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+
+    await act(async () => {
+      fireEvent(screen.getByTestId('switch-modo-discreto'), 'valueChange', true);
+    });
+
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledWith('Erro', 'Sem conexão.'));
+    // Rollback: o banco não mudou, então a UI volta ao estado anterior
+    expect(screen.getByTestId('switch-modo-discreto').props.value).toBe(false);
+  });
+
+  it('ignora toques enquanto o PATCH está em andamento', async () => {
+    let resolvePatch;
+    mockPatch.mockImplementation(
+      () => new Promise((resolve) => { resolvePatch = resolve; })
+    );
+
+    renderProfile();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+
+    await act(async () => {
+      fireEvent(screen.getByTestId('switch-modo-discreto'), 'valueChange', true);
+    });
+    await act(async () => {
+      fireEvent(screen.getByTestId('switch-modo-discreto'), 'valueChange', false);
+    });
+
+    expect(mockPatch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolvePatch({ data: { modo_discreto: true, impacto: IMPACTO_ATIVADO } });
+    });
   });
 });
 

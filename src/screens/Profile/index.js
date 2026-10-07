@@ -9,6 +9,7 @@ import {
   ScrollView,
   Image,
   Alert,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -38,6 +39,11 @@ export default function Profile({ navigation }) {
   // Estado de envio da foto de perfil (T020) — evita envios duplicados
   // e dá feedback visual enquanto a imagem sobe para o Cloudinary.
   const [uploading, setUploading] = useState(false);
+
+  // T022 — Modo Discreto (privacidade): flag vinda do banco + trava enquanto
+  // o PATCH está em andamento (evita toques duplicados).
+  const [modoDiscreto, setModoDiscreto] = useState(false);
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
 
   // Lista dinâmica de fotos do carrossel do usuário
   const [photos, setPhotos] = useState([
@@ -71,6 +77,8 @@ export default function Profile({ navigation }) {
           if (response.data.photos && response.data.photos.length > 0) {
             setPhotos(response.data.photos);
           }
+          // T022: o Switch reflete a flag salva no banco (modo_discreto).
+          setModoDiscreto(response.data.modo_discreto === true);
         }
       } catch (error) {
         console.error("Erro ao buscar perfil do banco de dados:", error);
@@ -229,6 +237,42 @@ export default function Profile({ navigation }) {
     }
   }
 
+  // ---------------------------------------------------------------
+  // T022 — Modo Discreto: PATCH /api/users/perfil atualiza apenas a
+  // flag modo_discreto no banco. A UI muda de forma otimista e volta
+  // ao estado anterior se a API recusar; o alerta explica o impacto
+  // com o texto devolvido pelo backend (critério de aceite).
+  // ---------------------------------------------------------------
+  async function handleToggleModoDiscreto(value) {
+    if (savingPrivacy) return;
+
+    const previous = modoDiscreto;
+    setModoDiscreto(value); // otimista — rollback no catch
+    setSavingPrivacy(true);
+    try {
+      const response = await api.patch("/api/users/perfil", {
+        modo_discreto: value,
+      });
+
+      Alert.alert(
+        value ? "Modo Discreto ativado" : "Modo Discreto desativado",
+        (response.data && response.data.impacto) ||
+          (value
+            ? "Seu perfil deixa de aparecer no Discovery; matches e conversas continuam ativos."
+            : "Seu perfil volta a aparecer no Discovery.")
+      );
+    } catch (error) {
+      console.error("Erro ao atualizar o Modo Discreto:", error);
+      setModoDiscreto(previous); // o banco não mudou — UI volta ao estado real
+      const message =
+        (error && error.response && error.response.data && error.response.data.error) ||
+        "Não foi possível alterar o Modo Discreto.";
+      Alert.alert("Erro", message);
+    } finally {
+      setSavingPrivacy(false);
+    }
+  }
+
   return (
     <LinearGradient colors={['#2c003e', '#1a0026', '#0d0012']} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
@@ -373,6 +417,35 @@ export default function Profile({ navigation }) {
               value={userData.bio}
               onChangeText={(text) => setUserData({ ...userData, bio: text })}
             />
+
+            {/* Modo Discreto — privacidade principal (T022) */}
+            <View style={styles.privacyCard} testID="card-modo-discreto">
+              <View style={styles.privacyRow}>
+                <Ionicons name="eye-off-outline" size={20} color="#fff" />
+                <Text style={styles.privacyTitle}>Modo Discreto</Text>
+                <Switch
+                  testID="switch-modo-discreto"
+                  value={modoDiscreto}
+                  onValueChange={handleToggleModoDiscreto}
+                  disabled={savingPrivacy}
+                  trackColor={{ false: "#b2bec3", true: colors.primaryLight }}
+                  thumbColor={colors.white}
+                  accessibilityLabel="Ativar ou desativar Modo Discreto"
+                />
+              </View>
+              <Text style={styles.privacyHint}>
+                Oculta seu perfil do Discovery. Seus matches e conversas
+                continuam ativos e seu nome fica oculto nas notificações de
+                mensagem. Salvo automaticamente ao tocar no switch.
+              </Text>
+              <Text style={styles.privacyStatus}>
+                {savingPrivacy
+                  ? "Salvando..."
+                  : modoDiscreto
+                    ? "Ativado — perfil oculto no Discovery"
+                    : "Desativado — perfil visível no Discovery"}
+              </Text>
+            </View>
 
             <TouchableOpacity style={styles.buttonWrapper} onPress={handleSave}>
               <LinearGradient
@@ -549,5 +622,38 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "bold",
     letterSpacing: 1,
+  },
+  // T022 — cartão do Modo Discreto (privacidade)
+  privacyCard: {
+    width: "100%",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  privacyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  privacyTitle: {
+    ...typography.h3,
+    color: "#fff",
+    flex: 1,
+    marginHorizontal: spacing.sm,
+  },
+  privacyHint: {
+    ...typography.caption,
+    color: colors.textMuted || "#dcdde1",
+    marginTop: spacing.sm,
+    lineHeight: 17,
+  },
+  privacyStatus: {
+    ...typography.caption,
+    color: colors.primaryLight,
+    marginTop: spacing.xs,
+    fontWeight: "600",
   },
 });
