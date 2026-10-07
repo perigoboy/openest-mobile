@@ -22,7 +22,15 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O Openest acessa suas fotos para voce trocar a foto do seu perfil.",
+          "cameraPermission": "O Openest usa a camera para voce tirar uma foto de perfil.",
+          "microphonePermission": false
+        }
+      ]
     ]
   }
 }

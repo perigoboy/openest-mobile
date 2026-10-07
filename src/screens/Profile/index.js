@@ -13,9 +13,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
+import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "../../components";
 import { colors, spacing, typography } from "../../styles/theme";
 import api from "../../services/api";
+import { uploadProfilePhoto } from "../../services/uploadPhoto";
 
 export default function Profile({ navigation }) {
   const [userData, setUserData] = useState({
@@ -30,7 +32,12 @@ export default function Profile({ navigation }) {
     maritalStatus: "",
     cityNeighborhood: "",
     bio: "",
+    foto_url: "",
   });
+
+  // Estado de envio da foto de perfil (T020) — evita envios duplicados
+  // e dá feedback visual enquanto a imagem sobe para o Cloudinary.
+  const [uploading, setUploading] = useState(false);
 
   // Lista dinâmica de fotos do carrossel do usuário
   const [photos, setPhotos] = useState([
@@ -42,12 +49,15 @@ export default function Profile({ navigation }) {
   useEffect(() => {
     async function fetchProfile() {
       try {
-        const response = await api.get('/users/perfil');
+        // T020: prefixo /api (mesmo padrão do AuthContext) e guarda a foto
+        // já salva no Cloudinary para exibir no Avatar.
+        const response = await api.get('/api/users/perfil');
         if (response.data) {
           setUserData({
             ...userData,
             name: response.data.name || response.data.username || "Usuário Openest",
             email: response.data.email || "",
+            foto_url: response.data.foto_url || "",
             firstName: response.data.firstName || "",
             lastName: response.data.lastName || "",
             gender: response.data.gender || "",
@@ -86,7 +96,8 @@ export default function Profile({ navigation }) {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        // MediaTypeOptions está deprecado no SDK 57 — usa a lista de MediaType.
+        mediaTypes: ["images"],
         allowsEditing: true,
         aspect: [4, 5],
         quality: 0.8,
@@ -99,6 +110,89 @@ export default function Profile({ navigation }) {
       }
     } catch (error) {
       Alert.alert("Erro", "Não foi possível carregar a imagem.");
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // T020 — troca da foto de perfil pela galeria/câmera com upload
+  // na nuvem (Cloudinary) via FormData.
+  // ---------------------------------------------------------------
+
+  // Mostra as opções de origem da nova foto de perfil.
+  function handleChangePhoto() {
+    if (uploading) return;
+
+    Alert.alert("Trocar foto de perfil", "Escolha uma opção:", [
+      { text: "Galeria", onPress: () => pickAndUploadPhoto("library") },
+      { text: "Câmera", onPress: () => pickAndUploadPhoto("camera") },
+      { text: "Cancelar", style: "cancel" },
+    ]);
+  }
+
+  // Solicita a permissão, abre o seletor/câmera e envia a imagem para a API.
+  async function pickAndUploadPhoto(source) {
+    try {
+      const permission =
+        source === "camera"
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        Alert.alert(
+          "Permissão negada",
+          source === "camera"
+            ? "Precisamos de permissão para usar a câmera."
+            : "Precisamos de permissão para aceder à galeria."
+        );
+        return;
+      }
+
+      const pickerOptions = {
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      };
+
+      const result =
+        source === "camera"
+          ? await ImagePicker.launchCameraAsync(pickerOptions)
+          : await ImagePicker.launchImageLibraryAsync(pickerOptions);
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      await uploadPhoto(result.assets[0]);
+    } catch (error) {
+      console.error("Erro ao escolher imagem:", error);
+      Alert.alert("Erro", "Não foi possível carregar a imagem.");
+    }
+  }
+
+  // Monta o FormData e envia para POST /api/users/upload-photo; a API salva
+  // no Cloudinary e devolve a URL, que é aplicada na UI (Avatar + carrossel).
+  async function uploadPhoto(asset) {
+    setUploading(true);
+    try {
+      const url = await uploadProfilePhoto(asset.uri, {
+        fileName: asset.fileName || `profile-${Date.now()}.jpg`,
+        mimeType: asset.mimeType || "image/jpeg",
+      });
+
+      setUserData((prev) => ({ ...prev, foto_url: url }));
+      // A primeira posição do carrossel é a foto principal do perfil.
+      setPhotos((prev) => (prev.length > 0 ? [url, ...prev.slice(1)] : [url]));
+
+      Alert.alert("Sucesso", "Foto de perfil atualizada com sucesso!");
+    } catch (error) {
+      console.error("Erro no upload da foto:", error);
+      const message =
+        (error && error.response && error.response.data && error.response.data.error) ||
+        "Não foi possível enviar a foto para a nuvem.";
+      Alert.alert("Erro", message);
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -144,10 +238,23 @@ export default function Profile({ navigation }) {
             <Text style={styles.logoText}>OPENEST</Text>
           </View>
 
-          {/* Avatar e Informações Dinâmicas do Usuário */}
+          {/* Avatar e Informações Dinâmicas do Usuário (T020: foto na nuvem) */}
           <View style={styles.avatarContainer}>
-            <Avatar name={userData.name} size={80} />
-            <Text style={styles.userName}>{userData.name}</Text>
+            <View style={styles.avatarWrapper}>
+              <Avatar uri={userData.foto_url} name={userData.name} size={80} />
+              <TouchableOpacity
+                testID="btn-change-photo"
+                style={[styles.changePhotoButton, uploading && styles.changePhotoButtonDisabled]}
+                onPress={handleChangePhoto}
+                disabled={uploading}
+                accessibilityLabel="Trocar foto de perfil"
+              >
+                <Ionicons name="camera-outline" size={16} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.userName}>
+              {uploading ? "Enviando foto..." : userData.name}
+            </Text>
             <Text style={styles.userEmail}>{userData.email}</Text>
           </View>
 
@@ -304,6 +411,26 @@ const styles = StyleSheet.create({
   avatarContainer: {
     alignItems: "center",
     marginBottom: spacing.md,
+  },
+  avatarWrapper: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  changePhotoButton: {
+    position: "absolute",
+    bottom: -4,
+    right: -4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#7b2cbf",
+    borderWidth: 2,
+    borderColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  changePhotoButtonDisabled: {
+    opacity: 0.6,
   },
   userName: {
     ...typography.h2,
