@@ -14,10 +14,20 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { Avatar } from "../../components";
+import { Avatar, PhotoGallery } from "../../components";
 import { colors, spacing, typography } from "../../styles/theme";
 import api from "../../services/api";
 import { uploadProfilePhoto } from "../../services/uploadPhoto";
+import {
+  MAX_PROFILE_PHOTOS,
+  addPhoto,
+  movePhoto,
+  photosFromProfile,
+  persistProfilePhotos,
+  removePhoto,
+  sanitizePhotos,
+  setMainPhoto,
+} from "../../services/profilePhotos";
 
 export default function Profile({ navigation }) {
   const [userData, setUserData] = useState({
@@ -39,11 +49,9 @@ export default function Profile({ navigation }) {
   // e dá feedback visual enquanto a imagem sobe para o Cloudinary.
   const [uploading, setUploading] = useState(false);
 
-  // Lista dinâmica de fotos do carrossel do usuário
-  const [photos, setPhotos] = useState([
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-    'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400'
-  ]);
+  // Lista ordenada de fotos do perfil (T021): a posição 0 é a foto principal,
+  // a mesma exibida no Avatar e no Card de Descoberta.
+  const [photos, setPhotos] = useState([]);
 
   // Buscar dados reais do usuário logado (T018)
   useEffect(() => {
@@ -53,11 +61,15 @@ export default function Profile({ navigation }) {
         // já salva no Cloudinary para exibir no Avatar.
         const response = await api.get('/api/users/perfil');
         if (response.data) {
+          // T021: galeria ordenada vinda da API (`photos`), com fallback para
+          // `foto_url` nos perfis antigos (mantém o Avatar funcionando).
+          const profilePhotos = photosFromProfile(response.data);
+          setPhotos(profilePhotos);
           setUserData({
             ...userData,
             name: response.data.name || response.data.username || "Usuário Openest",
             email: response.data.email || "",
-            foto_url: response.data.foto_url || "",
+            foto_url: response.data.foto_url || profilePhotos[0] || "",
             firstName: response.data.firstName || "",
             lastName: response.data.lastName || "",
             gender: response.data.gender || "",
@@ -68,9 +80,6 @@ export default function Profile({ navigation }) {
             cityNeighborhood: response.data.cityNeighborhood || "",
             bio: response.data.bio || "",
           });
-          if (response.data.photos && response.data.photos.length > 0) {
-            setPhotos(response.data.photos);
-          }
         }
       } catch (error) {
         console.error("Erro ao buscar perfil do banco de dados:", error);
@@ -85,11 +94,28 @@ export default function Profile({ navigation }) {
     fetchProfile();
   }, []);
 
-  // Função para adicionar nova foto da galeria
+  // ---------------------------------------------------------------
+  // T021 — galeria de múltiplas fotos: adicionar (upload no Cloudinary),
+  // remover, reordenar e definir a foto principal, sempre persistindo a
+  // ordem no backend (PUT /api/users/perfil).
+  // ---------------------------------------------------------------
+
+  // Envia a nova foto para a nuvem e acrescenta no fim da lista — ela não
+  // substitui a principal — respeitando o limite N de fotos do perfil.
   async function handleAddPhoto() {
+    if (uploading) return;
+
+    if (photos.length >= MAX_PROFILE_PHOTOS) {
+      Alert.alert(
+        "Limite atingido",
+        `Você pode ter até ${MAX_PROFILE_PHOTOS} fotos no perfil.`
+      );
+      return;
+    }
+
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
+
       if (!permissionResult.granted) {
         Alert.alert("Permissão negada", "Precisamos de permissão para aceder à galeria.");
         return;
@@ -103,13 +129,38 @@ export default function Profile({ navigation }) {
         quality: 0.8,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const newUri = result.assets[0].uri;
-        setPhotos([...photos, newUri]);
-        Alert.alert("Sucesso", "Foto adicionada ao perfil!");
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
       }
+
+      await uploadGalleryPhoto(result.assets[0]);
     } catch (error) {
       Alert.alert("Erro", "Não foi possível carregar a imagem.");
+    }
+  }
+
+  // Upload da foto de galeria + gravação da lista ordenada no backend.
+  async function uploadGalleryPhoto(asset) {
+    setUploading(true);
+    try {
+      const url = await uploadProfilePhoto(asset.uri, {
+        fileName: asset.fileName || `profile-${Date.now()}.jpg`,
+        mimeType: asset.mimeType || "image/jpeg",
+      });
+
+      const nextPhotos = addPhoto(photos, url);
+      setPhotos(nextPhotos);
+      await persistProfilePhotos(nextPhotos);
+
+      Alert.alert("Sucesso", "Foto adicionada à galeria!");
+    } catch (error) {
+      console.error("Erro ao adicionar foto da galeria:", error);
+      const message =
+        (error && error.response && error.response.data && error.response.data.error) ||
+        "Não foi possível adicionar a foto.";
+      Alert.alert("Erro", message);
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -171,7 +222,8 @@ export default function Profile({ navigation }) {
   }
 
   // Monta o FormData e envia para POST /api/users/upload-photo; a API salva
-  // no Cloudinary e devolve a URL, que é aplicada na UI (Avatar + carrossel).
+  // no Cloudinary, devolve a URL e (T021) já grava a foto como principal
+  // (posição 0 da galeria) — a UI local acompanha a mesma regra.
   async function uploadPhoto(asset) {
     setUploading(true);
     try {
@@ -181,8 +233,8 @@ export default function Profile({ navigation }) {
       });
 
       setUserData((prev) => ({ ...prev, foto_url: url }));
-      // A primeira posição do carrossel é a foto principal do perfil.
-      setPhotos((prev) => (prev.length > 0 ? [url, ...prev.slice(1)] : [url]));
+      // A primeira posição da galeria é a foto principal do perfil.
+      setPhotos((prev) => sanitizePhotos([url, ...prev.filter((uri) => uri !== url)]));
 
       Alert.alert("Sucesso", "Foto de perfil atualizada com sucesso!");
     } catch (error) {
@@ -196,7 +248,7 @@ export default function Profile({ navigation }) {
     }
   }
 
-  // Função para remover foto do carrossel
+  // Remove a foto da galeria (mantém ao menos uma) e salva a nova ordem.
   function handleRemovePhoto(indexToRemove) {
     if (photos.length <= 1) {
       Alert.alert("Atenção", "Você precisa manter pelo menos uma foto no perfil.");
@@ -211,13 +263,42 @@ export default function Profile({ navigation }) {
         {
           text: "Remover",
           style: "destructive",
-          onPress: () => {
-            const updatedPhotos = photos.filter((_, index) => index !== indexToRemove);
-            setPhotos(updatedPhotos);
-          }
+          onPress: async () => {
+            await applyPhotosChange(removePhoto(photos, indexToRemove));
+          },
         }
       ]
     );
+  }
+
+  // Reordena a galeria pelas setas ←/→ do grid (T021).
+  async function handleMovePhoto(from, to) {
+    const updatedPhotos = movePhoto(photos, from, to);
+    if (updatedPhotos.join("||") === photos.join("||")) return;
+    await applyPhotosChange(updatedPhotos);
+  }
+
+  // Define outra foto como principal: move para a posição 0, que é o que o
+  // Card de Descoberta exibe (foto_url acompanha photos[0]).
+  async function handleSetMainPhoto(index) {
+    if (index === 0) return;
+    await applyPhotosChange(setMainPhoto(photos, index));
+  }
+
+  // Aplica a nova lista na UI (foto principal acompanha) e persiste a ordem.
+  async function applyPhotosChange(updatedPhotos) {
+    setPhotos(updatedPhotos);
+    setUserData((prev) => ({ ...prev, foto_url: updatedPhotos[0] || "" }));
+
+    try {
+      await persistProfilePhotos(updatedPhotos);
+    } catch (error) {
+      console.error("Erro ao salvar a ordem das fotos:", error);
+      const message =
+        (error && error.response && error.response.data && error.response.data.error) ||
+        "Não foi possível salvar a ordem das fotos.";
+      Alert.alert("Erro", message);
+    }
   }
 
   async function handleSave() {
@@ -262,32 +343,16 @@ export default function Profile({ navigation }) {
             <Text style={styles.userEmail}>{userData.email}</Text>
           </View>
 
-          {/* Carrossel de Fotos com Opção de Adicionar e Remover */}
-          <View style={styles.carouselContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselScroll}>
-              {photos.map((photoUri, index) => (
-                <TouchableOpacity 
-                  key={index} 
-                  style={[styles.photoCard, index === 0 && styles.photoCardActive]}
-                  onLongPress={() => handleRemovePhoto(index)}
-                  onPress={() => Alert.alert("Opção", "Toque longo para remover a foto.")}
-                >
-                  <Image source={{ uri: photoUri }} style={styles.carouselImage} />
-                  <TouchableOpacity 
-                    style={styles.removeBadge}
-                    onPress={() => handleRemovePhoto(index)}
-                  >
-                    <Text style={styles.removeBadgeText}>✕</Text>
-                  </TouchableOpacity>
-                </TouchableOpacity>
-              ))}
-
-              {/* Botão para Adicionar Nova Foto */}
-              <TouchableOpacity style={styles.addPhotoCard} onPress={handleAddPhoto}>
-                <Text style={styles.addPhotoIcon}>＋</Text>
-                <Text style={styles.addPhotoText}>Adicionar</Text>
-              </TouchableOpacity>
-            </ScrollView>
+          {/* Grid de Fotos (T021): adicionar/remover/reordenar até N fotos */}
+          <View style={styles.galleryContainer}>
+            <PhotoGallery
+              photos={photos}
+              onAdd={handleAddPhoto}
+              onRemove={handleRemovePhoto}
+              onMove={handleMovePhoto}
+              onSetMain={handleSetMainPhoto}
+              disabled={uploading}
+            />
           </View>
 
           {/* Formulário de Campos Detalhados */}
@@ -446,69 +511,9 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textMuted || "#dcdde1",
   },
-  carouselContainer: {
+  galleryContainer: {
     width: "100%",
     marginBottom: spacing.xl,
-  },
-  carouselScroll: {
-    alignItems: "center",
-    paddingHorizontal: spacing.sm,
-  },
-  photoCard: {
-    width: 85,
-    height: 115,
-    borderRadius: 16,
-    overflow: "hidden",
-    marginHorizontal: spacing.xs,
-    position: "relative",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
-  },
-  photoCardActive: {
-    borderWidth: 2,
-    borderColor: "#fff",
-  },
-  carouselImage: {
-    width: "100%",
-    height: "100%",
-  },
-  removeBadge: {
-    position: "absolute",
-    top: 4,
-    right: 4,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  removeBadgeText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  addPhotoCard: {
-    width: 85,
-    height: 115,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.4)",
-    borderStyle: "dashed",
-    justifyContent: "center",
-    alignItems: "center",
-    marginHorizontal: spacing.xs,
-    backgroundColor: "rgba(255,255,255,0.05)",
-  },
-  addPhotoIcon: {
-    fontSize: 24,
-    color: "#fff",
-    marginBottom: 4,
-  },
-  addPhotoText: {
-    fontSize: 11,
-    color: "#fff",
-    fontWeight: "600",
   },
   formContainer: {
     width: "100%",
