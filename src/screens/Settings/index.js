@@ -23,6 +23,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -182,7 +183,11 @@ export default function Settings() {
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Topo / Logo + título */}
           <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>OPENEST</Text>
+            <Image 
+              source={require('../../../assets/logo-texto.png')} 
+              style={{ width: 120, height: 32 }} 
+              resizeMode="contain" 
+            />
             <Text style={styles.screenTitle}>Configurações</Text>
           </View>
 

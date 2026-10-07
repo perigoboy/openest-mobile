@@ -235,7 +235,11 @@ export default function Profile({ navigation }) {
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Topo / Logo */}
           <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>OPENEST</Text>
+            <Image 
+              source={require('../../../assets/logo-texto.png')} 
+              style={{ width: 120, height: 32 }} 
+              resizeMode="contain" 
+            />
           </View>
 
           {/* Avatar e Informações Dinâmicas do Usuário (T020: foto na nuvem) */}

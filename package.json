@@ -12,6 +12,7 @@
     "axios": "^1.20.0",
     "expo": "~57.0.21",
     "expo-asset": "~57.0.19",
+    "expo-blur": "~57.0.3",
     "expo-image-picker": "~57.0.16",
     "expo-linear-gradient": "~57.0.2",
     "expo-location": "~57.0.16",
@@ -36,10 +37,11 @@
   "jest": {
     "preset": "jest-expo",
     "setupFilesAfterEnv": [
-      "<rootDir>/jest.setup.js"],
+      "<rootDir>/jest.setup.js"
+    ],
     "moduleNameMapper": {
-    "^react-native-safe-area-context$": "<rootDir>/tests/mocks/react-native-safe-area-context.js",
-    "^@react-native-picker/picker$": "<rootDir>/tests/mocks/react-native-picker.js"
+      "^react-native-safe-area-context$": "<rootDir>/tests/mocks/react-native-safe-area-context.js",
+      "^@react-native-picker/picker$": "<rootDir>/tests/mocks/react-native-picker.js"
     },
     "transformIgnorePatterns": [
       "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg)"
