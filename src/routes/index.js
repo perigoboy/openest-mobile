@@ -2,20 +2,23 @@
 // T005 — Ponto único de decisão: usuário logado vê AppRoutes,
 // usuário deslogado vê AuthRoutes.
 //
-// ATENÇÃO: o AuthContext real só é criado na T009 (Sprint 2). Por enquanto,
-// isso aqui usa um estado local fixo (`isSignedIn = false`) só para o
-// roteamento poder ser testado nesta sprint. Quando a T009 estiver pronta,
-// troque o bloco abaixo por:
-//
-//   import { useAuth } from "../contexts/AuthContext";
-//   const { isSignedIn } = useAuth();
+// T025 — o estado vem do AuthContext real (T009), então o login
+// (signIn/signUp) e o logout (signOut, acionado pela tela de
+// Configurações) trocam de área sozinhos, sem navegação manual.
 
-import React, { useState } from "react";
+import React from "react";
 import AuthRoutes from "./AuthRoutes";
 import AppRoutes from "./AppRoutes";
+import { useAuth } from "../contexts/AuthContext";
+import { Loader } from "../components";
 
 export default function Routes() {
-  const [isSignedIn] = useState(false); // TODO(T009): substituir pelo AuthContext
+  const { signed, loading } = useAuth();
 
-  return isSignedIn ? <AppRoutes /> : <AuthRoutes />;
+  // Enquanto lê o token salvo no SecureStore, evita piscar a tela de login.
+  if (loading) {
+    return <Loader fullScreen />;
+  }
+
+  return signed ? <AppRoutes /> : <AuthRoutes />;
 }

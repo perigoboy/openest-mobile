@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Animated, StyleSheet, Text } from "react-native";
 import { colors, spacing, radius, typography } from "../styles/theme";
 
@@ -36,6 +36,15 @@ export function ToastProvider({ children }) {
     },
     [opacity]
   );
+
+  // Limpa o timer de auto-ocultação ao desmontar — senão ele dispara depois
+  // do unmount (em testes isso derruba o worker do Jest; no app, é setState
+  // em componente desmontado).
+  useEffect(() => {
+    return () => {
+      if (hideTimeout.current) clearTimeout(hideTimeout.current);
+    };
+  }, []);
 
   return (
     <ToastContext.Provider value={{ show }}>
