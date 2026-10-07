@@ -15,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { Avatar } from "../../components";
+import { Avatar, VerifiedBadge } from "../../components";
 import { colors, spacing, typography } from "../../styles/theme";
 import api from "../../services/api";
 import { uploadProfilePhoto } from "../../services/uploadPhoto";
@@ -45,6 +45,9 @@ export default function Profile({ navigation }) {
   const [modoDiscreto, setModoDiscreto] = useState(false);
   const [savingPrivacy, setSavingPrivacy] = useState(false);
 
+  // T023 — selo "Verificado": flag vinda do banco após aprovação da selfie.
+  const [verificado, setVerificado] = useState(false);
+
   // Lista dinâmica de fotos do carrossel do usuário
   const [photos, setPhotos] = useState([
     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
@@ -52,45 +55,56 @@ export default function Profile({ navigation }) {
   ]);
 
   // Buscar dados reais do usuário logado (T018)
-  useEffect(() => {
-    async function fetchProfile() {
-      try {
-        // T020: prefixo /api (mesmo padrão do AuthContext) e guarda a foto
-        // já salva no Cloudinary para exibir no Avatar.
-        const response = await api.get('/api/users/perfil');
-        if (response.data) {
-          setUserData({
-            ...userData,
-            name: response.data.name || response.data.username || "Usuário Openest",
-            email: response.data.email || "",
-            foto_url: response.data.foto_url || "",
-            firstName: response.data.firstName || "",
-            lastName: response.data.lastName || "",
-            gender: response.data.gender || "",
-            username: response.data.username || "",
-            language: response.data.language || "",
-            education: response.data.education || "",
-            maritalStatus: response.data.maritalStatus || "",
-            cityNeighborhood: response.data.cityNeighborhood || "",
-            bio: response.data.bio || "",
-          });
-          if (response.data.photos && response.data.photos.length > 0) {
-            setPhotos(response.data.photos);
-          }
-          // T022: o Switch reflete a flag salva no banco (modo_discreto).
-          setModoDiscreto(response.data.modo_discreto === true);
+  async function fetchProfile() {
+    try {
+      // T020: prefixo /api (mesmo padrão do AuthContext) e guarda a foto
+      // já salva no Cloudinary para exibir no Avatar.
+      const response = await api.get('/api/users/perfil');
+      if (response.data) {
+        setUserData({
+          ...userData,
+          name: response.data.name || response.data.username || "Usuário Openest",
+          email: response.data.email || "",
+          foto_url: response.data.foto_url || "",
+          firstName: response.data.firstName || "",
+          lastName: response.data.lastName || "",
+          gender: response.data.gender || "",
+          username: response.data.username || "",
+          language: response.data.language || "",
+          education: response.data.education || "",
+          maritalStatus: response.data.maritalStatus || "",
+          cityNeighborhood: response.data.cityNeighborhood || "",
+          bio: response.data.bio || "",
+        });
+        if (response.data.photos && response.data.photos.length > 0) {
+          setPhotos(response.data.photos);
         }
-      } catch (error) {
-        console.error("Erro ao buscar perfil do banco de dados:", error);
-        // Mantém dados amigáveis se a API falhar temporariamente no mock
-        setUserData(prev => ({
-          ...prev,
-          name: "Usuário Atual",
-          email: "usuario@openest.com"
-        }));
+        // T022: o Switch reflete a flag salva no banco (modo_discreto).
+        setModoDiscreto(response.data.modo_discreto === true);
+        // T023: o selo "Verificado" reflete a aprovação da selfie no banco.
+        setVerificado(response.data.verificado === true);
       }
+    } catch (error) {
+      console.error("Erro ao buscar perfil do banco de dados:", error);
+      // Mantém dados amigáveis se a API falhar temporariamente no mock
+      setUserData(prev => ({
+        ...prev,
+        name: "Usuário Atual",
+        email: "usuario@openest.com"
+      }));
     }
+  }
+
+  useEffect(() => {
     fetchProfile();
+    // T023: refaz a busca quando a aba Perfil ganha foco, para o selo
+    // "Verificado" aparecer logo após o usuário enviar a selfie na
+    // tela de verificação (a aba fica montada durante todo o app).
+    const unsubscribe =
+      navigation && typeof navigation.addListener === "function"
+        ? navigation.addListener("focus", fetchProfile)
+        : undefined;
+    return unsubscribe;
   }, []);
 
   // Função para adicionar nova foto da galeria
@@ -303,6 +317,8 @@ export default function Profile({ navigation }) {
             <Text style={styles.userName}>
               {uploading ? "Enviando foto..." : userData.name}
             </Text>
+            {/* T023 — selo "Verificado" após aprovação da selfie */}
+            {verificado && <VerifiedBadge style={styles.verifiedBadge} />}
             <Text style={styles.userEmail}>{userData.email}</Text>
           </View>
 
@@ -518,6 +534,11 @@ const styles = StyleSheet.create({
   userEmail: {
     ...typography.body,
     color: colors.textMuted || "#dcdde1",
+  },
+  // T023 — selo "Verificado" centralizado abaixo do nome
+  verifiedBadge: {
+    alignSelf: "center",
+    marginTop: spacing.sm,
   },
   carouselContainer: {
     width: "100%",
