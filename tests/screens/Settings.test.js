@@ -4,6 +4,7 @@
 
 // ⚠️ mockSignOut definido FORA do jest.mock e reaproveitado dentro dele
 const mockSignOut = jest.fn();
+const mockNavigate = jest.fn();
 
 jest.mock('../../src/contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -23,7 +24,7 @@ import Settings from '../../src/screens/Settings';
 function renderSettings() {
   render(
     <ToastProvider>
-      <Settings />
+      <Settings navigation={{ navigate: mockNavigate, goBack: jest.fn() }} />
     </ToastProvider>
   );
 }
@@ -231,14 +232,12 @@ describe('Settings — sair (logout via AuthContext)', () => {
   });
 });
 
-describe('Settings — ações pendentes das outras tasks', () => {
-  it('mostra feedback de "em breve" na verificação de foto (T023)', async () => {
+describe('Settings — demais ações de conta', () => {
+  it('navega para a tela de selfie na verificação de foto (T023)', async () => {
     renderSettings();
     await pressButton('btn-photo-verification');
 
-    expect(
-      screen.getByText('Em breve: a verificação de foto estará disponível nesta tela.')
-    ).toBeTruthy();
+    expect(mockNavigate).toHaveBeenCalledWith('PhotoVerification');
     expect(mockSignOut).not.toHaveBeenCalled();
   });
 

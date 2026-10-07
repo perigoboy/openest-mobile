@@ -3,7 +3,7 @@
 // Centraliza em um único menu todas as ações de conta do app:
 //   • Notificações        — preferência local (assinatura push real é a T048)
 //   • Alterar senha       — modal com validação (rota da API ainda não existe, ver TODO)
-//   • Verificação de foto — fluxo de selfie é a T023
+//   • Verificação de foto — abre a tela de selfie (T023)
 //   • Meus dados (LGPD)   — portabilidade/exclusão de conta é a T024
 //   • Sair                — logout ligado ao signOut do AuthContext (T009)
 //
@@ -67,7 +67,7 @@ function MenuRow({ testID, icon, title, subtitle, onPress, right }) {
   );
 }
 
-export default function Settings() {
+export default function Settings({ navigation }) {
   const { signOut } = useAuth();
   const toast = useToast();
 
@@ -143,11 +143,11 @@ export default function Settings() {
   }
 
   function handlePhotoVerification() {
-    // TODO(T023): quando a tela de selfie existir, navegar para ela
-    // (navigation.navigate('PhotoVerification')).
-    toast.show("Em breve: a verificação de foto estará disponível nesta tela.", {
-      type: "info",
-    });
+    // T023 — abre a tela de captura/validação da selfie (rota registrada
+    // em AppRoutes.js, fora da tab bar visível).
+    if (navigation && typeof navigation.navigate === "function") {
+      navigation.navigate("PhotoVerification");
+    }
   }
 
   function handleDataPrivacy() {

@@ -409,4 +409,52 @@ describe('Perfil — Modo Discreto (T022)', () => {
   });
 });
 
+describe('Perfil — selo "Verificado" (T023)', () => {
+  it('exibe o selo Verificado quando a API devolve verificado: true', async () => {
+    mockGet.mockResolvedValue({
+      data: { name: 'Ana', email: 'ana@openest.com', foto_url: '', verificado: true },
+    });
+
+    renderProfile();
+
+    await waitFor(() => expect(screen.getByTestId('badge-verificado')).toBeTruthy());
+    expect(screen.getByText('Verificado')).toBeTruthy();
+    expect(mockGet).toHaveBeenCalledWith('/api/users/perfil');
+  });
+
+  it('não exibe o selo quando o perfil ainda não foi verificado', async () => {
+    renderProfile();
+
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    expect(screen.queryByTestId('badge-verificado')).toBeNull();
+  });
+
+  it('refaz a busca quando a aba ganha foco (selo aparece ao voltar da verificação)', async () => {
+    let focusListener;
+    const navigation = {
+      navigate: jest.fn(),
+      goBack: jest.fn(),
+      addListener: jest.fn((event, callback) => {
+        focusListener = callback;
+        return () => {};
+      }),
+    };
+
+    render(<Profile navigation={navigation} />);
+    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('badge-verificado')).toBeNull();
+
+    // Selfie aprovada na tela de verificação: próximo GET já traz a flag.
+    mockGet.mockResolvedValue({
+      data: { name: 'Ana', email: 'ana@openest.com', foto_url: '', verificado: true },
+    });
+
+    await act(async () => {
+      await focusListener();
+    });
+
+    await waitFor(() => expect(screen.getByTestId('badge-verificado')).toBeTruthy());
+  });
+});
+
 
