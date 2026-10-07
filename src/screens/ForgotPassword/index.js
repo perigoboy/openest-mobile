@@ -8,13 +8,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import api from '../../services/api';
 
-// T013 — Fluxo de "esqueci minha senha" (só a solicitação por e-mail).
-// A tela de digitar o token + nova senha já existe em src/screens/ResetPassword
-// mas é uma task separada (o endpoint dela ainda está incorreto, ver PR da T011).
 export default function ForgotPassword({ navigation }) {
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -27,11 +27,6 @@ export default function ForgotPassword({ navigation }) {
 
     setSubmitting(true);
     try {
-      // Rota real: POST /api/users/forgot-password (server.js: app.use("/api/users", userRoutes)).
-      // O backend SEMPRE responde 200 com a mesma mensagem genérica, exista o
-      // e-mail ou não — é proposital (evita revelar quais e-mails estão
-      // cadastrados), então não há um "caminho de sucesso" diferente de erro
-      // aqui além de falha de rede/servidor.
       const response = await api.post('/api/users/forgot-password', { email });
 
       Alert.alert(
@@ -48,74 +43,101 @@ export default function ForgotPassword({ navigation }) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.innerContainer}
-      >
-        <View style={styles.headerContainer}>
-          <Text style={styles.title}>Recuperar Senha</Text>
-          <Text style={styles.subtitle}>
-            Digite o e-mail da sua conta. Se ele estiver cadastrado, enviaremos
-            um link para você redefinir a senha.
-          </Text>
-        </View>
+    <LinearGradient colors={['#3a0ca3', '#1e003b']} style={styles.container}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.innerContainer}
+        >
+          <View style={styles.cardContainer}>
+            <BlurView intensity={50} tint="dark" style={styles.blurCard}>
+              <View style={styles.headerContainer}>
+                <Image 
+                  source={require('../../../assets/logo-chama.png')} 
+                  style={styles.logo} 
+                  resizeMode="contain"
+                />
+                <Text style={styles.title}>Recuperar Senha</Text>
+                <Text style={styles.subtitle}>
+                  Digite o e-mail da sua conta. Se ele estiver cadastrado, enviaremos
+                  um link para você redefinir a senha.
+                </Text>
+              </View>
 
-        <View style={styles.formContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="E-mail"
-            placeholderTextColor="#888"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-            editable={!submitting}
-          />
+              <View style={styles.formContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="E-mail"
+                  placeholderTextColor="rgba(255,255,255,0.6)"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  value={email}
+                  onChangeText={setEmail}
+                  editable={!submitting}
+                />
 
-          <TouchableOpacity
-            style={[styles.button, submitting && styles.buttonDisabled]}
-            onPress={handleSubmit}
-            disabled={submitting}
-          >
-            <Text style={styles.buttonText}>{submitting ? 'Enviando...' : 'Enviar link de recuperação'}</Text>
-          </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, submitting && styles.buttonDisabled]}
+                  onPress={handleSubmit}
+                  disabled={submitting}
+                >
+                  <Text style={styles.buttonText}>{submitting ? 'Enviando...' : 'Enviar link de recuperação'}</Text>
+                </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.backLink}
-            onPress={() => navigation.navigate('Login')}
-          >
-            <Text style={styles.backText}>Voltar para o Login</Text>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+                <TouchableOpacity
+                  style={styles.backLink}
+                  onPress={() => navigation.navigate('Login')}
+                >
+                  <Text style={styles.backText}>Voltar para o Login</Text>
+                </TouchableOpacity>
+              </View>
+            </BlurView>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f6fa',
   },
   innerContainer: {
     flex: 1,
     justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  cardContainer: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  blurCard: {
     paddingHorizontal: 24,
+    paddingVertical: 40,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
   },
   headerContainer: {
     marginBottom: 32,
     alignItems: 'center',
   },
+  logo: {
+    width: 60,
+    height: 60,
+    marginBottom: 16,
+  },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#1e272e',
+    color: '#fff',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
-    color: '#576574',
+    color: 'rgba(255,255,255,0.8)',
     textAlign: 'center',
     lineHeight: 20,
   },
@@ -123,23 +145,28 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     height: 50,
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 16,
-    fontSize: 16,
+    fontSize: 15,
     borderWidth: 1,
-    borderColor: '#dcdde1',
+    borderColor: 'rgba(255,255,255,0.2)',
     marginBottom: 16,
-    color: '#2f3640',
+    color: '#fff',
   },
   button: {
-    backgroundColor: '#0984e3',
+    backgroundColor: '#7209b7',
     height: 50,
-    borderRadius: 8,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -154,7 +181,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   backText: {
-    color: '#0984e3',
+    color: '#fff',
     fontSize: 14,
+    fontWeight: '500',
   },
 });
