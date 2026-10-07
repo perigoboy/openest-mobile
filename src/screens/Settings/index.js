@@ -4,7 +4,7 @@
 //   • Notificações        — preferência local (assinatura push real é a T048)
 //   • Alterar senha       — modal com validação (rota da API ainda não existe, ver TODO)
 //   • Verificação de foto — abre a tela de selfie (T023)
-//   • Meus dados (LGPD)   — portabilidade/exclusão de conta é a T024
+//   • Meus dados (LGPD)   — baixar dados (GET) e excluir conta (DELETE) — T024
 //   • Sair                — logout ligado ao signOut do AuthContext (T009)
 //
 // Visual segue o mesmo padrão da tela de Perfil (T018): fundo em gradiente
@@ -24,11 +24,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
+import * as Sharing from "expo-sharing"; // T024 — abre a folha de compartilhamento
+import { File, Paths } from "expo-file-system"; // T024 — grava o JSON exportado
+import api from "../../services/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { useToast } from "../../components";
 import { colors, spacing, typography } from "../../styles/theme";
@@ -77,6 +81,11 @@ export default function Settings({ navigation }) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [signingOut, setSigningOut] = useState(false);
+
+  // T024 — LGPD: modal de portabilidade/exclusão + travas de carregamento.
+  const [privacyModalVisible, setPrivacyModalVisible] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Carrega a preferência salva (padrão: ativadas).
   useEffect(() => {
@@ -150,12 +159,92 @@ export default function Settings({ navigation }) {
     }
   }
 
+  // T024 — LGPD: abre o modal com portabilidade e exclusão de conta.
   function handleDataPrivacy() {
-    // TODO(T024): quando as ações de portabilidade/exclusão existirem, navegar
-    // para a tela de privacidade (navigation.navigate('DataPrivacy')).
-    toast.show("Em breve: exclusão de conta e portabilidade de dados.", {
-      type: "info",
-    });
+    setPrivacyModalVisible(true);
+  }
+
+  function handleClosePrivacyModal() {
+    if (exporting || deleting) return;
+    setPrivacyModalVisible(false);
+  }
+
+  // T024 — "Baixar meus dados": GET /api/users/exportar-dados, grava o JSON
+  // em um arquivo no cache e abre a folha de compartilhamento do sistema
+  // (Salvar nos arquivos, WhatsApp, e-mail...) — padrão de portabilidade no mobile.
+  async function handleExportData() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const response = await api.get("/api/users/exportar-dados");
+      const conteudo = JSON.stringify(response.data, null, 2);
+
+      const file = new File(Paths.cache, `dados_openest_${Date.now()}.json`);
+      file.create({ overwrite: true, intermediates: true });
+      file.write(conteudo);
+
+      const available = await Sharing.isAvailableAsync();
+      if (available) {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: "application/json",
+          dialogTitle: "Baixar meus dados",
+          UTI: "public.json",
+        });
+        toast.show("Dados exportados! Escolha onde salvar o arquivo.", {
+          type: "success",
+        });
+      } else {
+        toast.show("Compartilhamento indisponível neste dispositivo.", {
+          type: "error",
+        });
+      }
+    } catch (error) {
+      console.error("Erro ao exportar dados (LGPD):", error);
+      const message =
+        (error && error.response && error.response.data && error.response.data.error) ||
+        "Não foi possível exportar seus dados.";
+      Alert.alert("Erro", message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // T024 — "Excluir conta": depois da confirmação a ação é irrevogável —
+  // DELETE /api/users/conta (soft delete + anonimização no backend) e, em
+  // seguida, signOut() limpa token/usuário do SecureStore (troca de rota
+  // para AuthRoutes acontece sozinha via src/routes/index.js).
+  function handleDeleteAccount() {
+    if (deleting) return;
+    Alert.alert(
+      "Excluir conta",
+      "Esta ação é definitiva: sua conta será excluída e os dados anonimizados. Não é possível desfazer.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Excluir", style: "destructive", onPress: confirmDeleteAccount },
+      ]
+    );
+  }
+
+  async function confirmDeleteAccount() {
+    setDeleting(true);
+    try {
+      const response = await api.delete("/api/users/conta");
+      // Sessão limpa imediatamente após a exclusão confirmada.
+      await signOut();
+      Alert.alert(
+        "Conta excluída",
+        (response && response.data && response.data.message) ||
+          "Sua conta foi excluída com sucesso."
+      );
+    } catch (error) {
+      console.error("Erro ao excluir conta (LGPD):", error);
+      const message =
+        (error && error.response && error.response.data && error.response.data.error) ||
+        "Não foi possível excluir a conta.";
+      Alert.alert("Erro", message);
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function handleSignOut() {
@@ -331,6 +420,75 @@ export default function Settings({ navigation }) {
           </KeyboardAvoidingView>
         </Modal>
       )}
+
+      {/* Modal: meus dados (LGPD) — T024 */}
+      {privacyModalVisible && (
+        <Modal
+          visible={privacyModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={handleClosePrivacyModal}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.modalOverlay}
+          >
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Meus dados (LGPD)</Text>
+              <Text style={styles.privacyText}>
+                Baixe uma cópia de todos os seus dados ou exclua sua conta
+                definitivamente. A exclusão é imediata e não pode ser desfeita.
+              </Text>
+
+              <TouchableOpacity
+                testID="btn-download-data"
+                style={styles.modalButtonWrapper}
+                onPress={handleExportData}
+                disabled={exporting || deleting}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+              >
+                <LinearGradient
+                  colors={["#7b2cbf", "#5a189a", "#3c096c"]}
+                  style={styles.modalButton}
+                >
+                  {exporting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.modalButtonText}>BAIXAR MEUS DADOS</Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="btn-delete-account"
+                style={styles.deleteButtonWrapper}
+                onPress={handleDeleteAccount}
+                disabled={exporting || deleting}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+              >
+                <LinearGradient colors={["#e74c3c", "#c0392b"]} style={styles.modalButton}>
+                  {deleting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.modalButtonText}>EXCLUIR CONTA</Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="btn-cancel-privacy"
+                style={styles.cancelButton}
+                onPress={handleClosePrivacyModal}
+                accessibilityRole="button"
+              >
+                <Text style={styles.cancelText}>Fechar</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      )}
     </LinearGradient>
   );
 }
@@ -469,6 +627,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#636e72",
     fontWeight: "600",
+  },
+  // T024 — modal de LGPD
+  privacyText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#636e72",
+    marginBottom: spacing.md,
+  },
+  deleteButtonWrapper: {
+    borderRadius: 12,
+    overflow: "hidden",
+    marginTop: spacing.sm,
   },
 });
 
