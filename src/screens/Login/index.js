@@ -6,8 +6,8 @@ import {
   TouchableOpacity,
   View,
   KeyboardAvoidingView,
-  Platform,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
@@ -37,7 +37,11 @@ export default function Login({ navigation }) {
         style={styles.innerContainer}
       >
         <View style={styles.headerContainer}>
-          <Text style={styles.title}>Openest Mobile</Text>
+          <Image 
+            source={require('../../../assets/logo-completa.png')} 
+            style={styles.logo} 
+            resizeMode="contain"
+          />
           <Text style={styles.subtitle}>Faça login para continuar</Text>
         </View>
 
@@ -110,11 +114,10 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     alignItems: 'center',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1e272e',
-    marginBottom: 8,
+  logo: {
+    width: 150,
+    height: 150,
+    marginBottom: 16,
   },
   subtitle: {
     fontSize: 16,

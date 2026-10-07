@@ -4,7 +4,7 @@
     "slug": "openest-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo-chama.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
