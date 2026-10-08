@@ -42,3 +42,5 @@ yarn-error.*
 
 
 .env
+# Coverage reports (gerados por jest --coverage)
+coverage/
