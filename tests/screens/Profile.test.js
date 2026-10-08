@@ -19,6 +19,7 @@ jest.mock('expo-image-picker', () => ({
 
 const mockGet = jest.fn();
 const mockPost = jest.fn();
+const mockPut = jest.fn();
 
 jest.mock('../../src/services/api', () => ({
   __esModule: true,

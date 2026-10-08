@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
+import { Avatar, PhotoGallery, VerifiedBadge } from "../../components";
 import { colors, spacing, typography } from "../../styles/theme";
 import api from "../../services/api";
 import { uploadProfilePhoto } from "../../services/uploadPhoto";
@@ -48,6 +49,46 @@ export default function Profile({ navigation }) {
   // Estado de envio da foto de perfil (T020) — evita envios duplicados
   // e dá feedback visual enquanto a imagem sobe para o Cloudinary.
   const [uploading, setUploading] = useState(false);
+
+  // T022 — Modo Discreto (privacidade): flag vinda do banco + trava enquanto
+  // o PATCH está em andamento (evita toques duplicados).
+  const [modoDiscreto, setModoDiscreto] = useState(false);
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
+
+  // T023 — selo "Verificado": flag vinda do banco após aprovação da selfie.
+  const [verificado, setVerificado] = useState(false);
+
+  // Lista ordenada de fotos do perfil (T021): a posição 0 é a foto principal,
+  // a mesma exibida no Avatar e no Card de Descoberta.
+  const [photos, setPhotos] = useState([]);
+
+  // Buscar dados reais do usuário logado (T018)
+  async function fetchProfile() {
+    try {
+      // T020: prefixo /api (mesmo padrão do AuthContext) e guarda a foto
+      // já salva no Cloudinary para exibir no Avatar.
+      const response = await api.get('/api/users/perfil');
+      if (response.data) {
+        // T021: galeria ordenada vinda da API (`photos`), com fallback para
+        // `foto_url` nos perfis antigos (mantém o Avatar funcionando).
+        const profilePhotos = photosFromProfile(response.data);
+        setUserData({
+          ...userData,
+          name: response.data.name || response.data.username || "Usuário Openest",
+          email: response.data.email || "",
+          foto_url: response.data.foto_url || profilePhotos[0] || "",
+          firstName: response.data.firstName || "",
+          lastName: response.data.lastName || "",
+          gender: response.data.gender || "",
+          username: response.data.username || "",
+          language: response.data.language || "",
+          education: response.data.education || "",
+          maritalStatus: response.data.maritalStatus || "",
+          cityNeighborhood: response.data.cityNeighborhood || "",
+          bio: response.data.bio || "",
+        });
+        if (profilePhotos.length > 0) {
+          setPhotos(profilePhotos);
         }
         // T022: o Switch reflete a flag salva no banco (modo_discreto).
         setModoDiscreto(response.data.modo_discreto === true);
@@ -561,6 +602,12 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textMuted || "#dcdde1",
   },
+  // T023 — selo "Verificado" centralizado abaixo do nome
+  verifiedBadge: {
+    alignSelf: "center",
+    marginTop: spacing.sm,
+  },
+  galleryContainer: {
     width: "100%",
     marginBottom: spacing.xl,
   },
