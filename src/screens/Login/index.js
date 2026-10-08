@@ -53,6 +53,7 @@ export default function Login({ navigation }) {
 
               <View style={styles.formContainer}>
                 <TextInput
+                  testID="input-email"
                   style={styles.input}
                   placeholder="E-mail"
                   placeholderTextColor="rgba(255,255,255,0.6)"
@@ -63,6 +64,7 @@ export default function Login({ navigation }) {
                 />
 
                 <TextInput
+                  testID="input-password"
                   style={styles.input}
                   placeholder="Senha"
                   placeholderTextColor="rgba(255,255,255,0.6)"
@@ -72,6 +74,7 @@ export default function Login({ navigation }) {
                 />
 
                 <TouchableOpacity
+                  testID="btn-submit"
                   style={styles.button}
                   onPress={handleLogin}
                 >
@@ -79,6 +82,7 @@ export default function Login({ navigation }) {
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  testID="link-forgot"
                   style={styles.forgotPasswordLink}
                   onPress={() => navigation.navigate('ForgotPassword')}
                 >
@@ -86,6 +90,7 @@ export default function Login({ navigation }) {
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  testID="link-register"
                   style={styles.registerLink}
                   onPress={() => navigation.navigate('Register')}
                 >
