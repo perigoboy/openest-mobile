@@ -15,35 +15,50 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useAuth } from '../../contexts/AuthContext';
-import api from '../../services/api';
 
 export default function Register({ navigation }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  const { signIn } = useAuth();
+  const { signUp } = useAuth();
+
+  // LGPD: exibe o texto dos Termos de Uso e da Política de Privacidade.
+  function handleOpenTerms() {
+    Alert.alert(
+      'Termos de Uso e Política de Privacidade',
+      'Em conformidade com a LGPD, seus dados de perfil e relacionamento são tratados com segurança e criptografia para o funcionamento do Openest Mobile.'
+    );
+  }
 
   async function handleRegister() {
     if (!name.trim() || !email.trim() || !password.trim()) {
       Alert.alert('Atenção', 'Por favor, preencha todos os campos obrigatórios.');
       return;
     }
+
+    // T012: mesma regra de senha mínima que o backend aplica (userController.js),
+    // evita uma ida e volta de rede só para descobrir que a senha é curta demais.
     if (password.length < 6) {
       Alert.alert('Atenção', 'A senha precisa ter no mínimo 6 caracteres.');
       return;
     }
+
+    if (!acceptedTerms) {
+      Alert.alert('Consentimento Obrigatório', 'Você precisa aceitar os Termos de Uso e a Política de Privacidade para prosseguir.');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await api.post('/api/users/register', {
-        name,
-        email,
-        password,
-        status_relacionamento: 'solteiro',
-      });
-      setIsSuccess(true);
+      // T012: signUp já dispara o POST correto (/api/users/register) e faz o
+      // auto-login salvando o token — a troca para o AppRoutes acontece
+      // sozinha (ver src/routes/index.js), sem precisar navegar manualmente.
+      await signUp(name, email, password, 'solteiro');
     } catch (error) {
+      // O backend do cadastro responde erros na chave `error` (diferente do
+      // login, que usa `message`) — ver userController.js.
       const backendMessage = error?.response?.data?.error;
       Alert.alert('Erro no cadastro', backendMessage || 'Não foi possível realizar o cadastro. Tente novamente.');
     } finally {
@@ -67,65 +82,77 @@ export default function Register({ navigation }) {
                   resizeMode="contain"
                 />
                 
-                {isSuccess ? (
-                  <View style={styles.successContainer}>
-                    <Text style={styles.successText}>Cadastro realizado com sucesso.</Text>
+                <View style={styles.formContainer}>
+                  <Text style={styles.label}>Nome</Text>
+                  <TextInput
+                    testID="input-name"
+                    style={styles.input}
+                    placeholder="Enter your name"
+                    placeholderTextColor="rgba(255,255,255,0.6)"
+                    value={name}
+                    onChangeText={setName}
+                  />
+
+                  <Text style={styles.label}>Email</Text>
+                  <TextInput
+                    testID="input-email"
+                    style={styles.input}
+                    placeholder="Enter your email"
+                    placeholderTextColor="rgba(255,255,255,0.6)"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={email}
+                    onChangeText={setEmail}
+                  />
+
+                  <Text style={styles.label}>Senha</Text>
+                  <TextInput
+                    testID="input-password"
+                    style={styles.input}
+                    placeholder="Enter your password"
+                    placeholderTextColor="rgba(255,255,255,0.6)"
+                    secureTextEntry
+                    value={password}
+                    onChangeText={setPassword}
+                  />
+
+                  {/* Checkbox de Termos de Uso (LGPD) */}
+                  <View style={styles.termsContainer}>
                     <TouchableOpacity
-                      style={styles.button}
-                      onPress={async () => {
-                        try {
-                          await signIn(email, password);
-                        } catch (error) {
-                          Alert.alert('Erro', 'Não foi possível fazer o login automático.');
-                        }
-                      }}
-                    >
-                      <Text style={styles.buttonText}>DESLIZAR</Text>
-                    </TouchableOpacity>
+                      testID="checkbox-terms"
+                      accessibilityRole="button"
+                      style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}
+                      onPress={() => setAcceptedTerms(!acceptedTerms)}
+                    />
+                    <View style={styles.termsTextContainer}>
+                      <Text style={styles.termsText}>Li e concordo com os </Text>
+                      <TouchableOpacity testID="link-terms" onPress={handleOpenTerms}>
+                        <Text style={styles.termsLink}>Termos de Uso e LGPD</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                ) : (
-                  <View style={styles.formContainer}>
-                    <Text style={styles.label}>Nome</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter your name"
-                      placeholderTextColor="rgba(255,255,255,0.6)"
-                      value={name}
-                      onChangeText={setName}
-                    />
 
-                    <Text style={styles.label}>Email</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter your email"
-                      placeholderTextColor="rgba(255,255,255,0.6)"
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      value={email}
-                      onChangeText={setEmail}
-                    />
+                  <TouchableOpacity
+                    testID="btn-submit"
+                    accessibilityRole="button"
+                    style={[styles.button, submitting && styles.buttonDisabled]}
+                    onPress={handleRegister}
+                    disabled={submitting}
+                  >
+                    <Text style={styles.buttonText}>
+                      {submitting ? 'Cadastrando...' : 'Cadastrar'}
+                    </Text>
+                  </TouchableOpacity>
 
-                    <Text style={styles.label}>Senha</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter your password"
-                      placeholderTextColor="rgba(255,255,255,0.6)"
-                      secureTextEntry
-                      value={password}
-                      onChangeText={setPassword}
-                    />
-
-                    <TouchableOpacity
-                      style={[styles.button, submitting && styles.buttonDisabled]}
-                      onPress={handleRegister}
-                      disabled={submitting}
-                    >
-                      <Text style={styles.buttonText}>
-                        {submitting ? 'CADASTRANDO...' : 'CADASTRE-SE'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                  <TouchableOpacity
+                    testID="link-login"
+                    accessibilityRole="button"
+                    style={styles.backLink}
+                    onPress={() => navigation.goBack()}
+                  >
+                    <Text style={styles.backText}>Já tem uma conta? Faça login</Text>
+                  </TouchableOpacity>
+                </View>
               </BlurView>
             </View>
           </ScrollView>
@@ -208,15 +235,46 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  successContainer: {
+  termsContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    width: '100%',
+    marginTop: 4,
+    marginBottom: 16,
   },
-  successText: {
-    fontSize: 18,
-    fontWeight: '600',
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.6)',
+    marginRight: 12,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  checkboxChecked: {
+    backgroundColor: '#7209b7',
+    borderColor: '#fff',
+  },
+  termsTextContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    flex: 1,
+  },
+  termsText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  termsLink: {
+    fontSize: 14,
     color: '#fff',
-    marginBottom: 40,
-    textAlign: 'center',
+    fontWeight: 'bold',
+    textDecorationLine: 'underline',
+  },
+  backLink: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  backText: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 14,
   },
 });
