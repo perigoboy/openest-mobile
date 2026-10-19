@@ -15,6 +15,7 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withSpring,
   withTiming,
 } from "react-native-reanimated";
@@ -30,6 +31,11 @@ export const SWIPE_SCREEN_RATIO = 0.3;
 // Velocidade (px/s) mínima de um "flick" rápido que completa o swipe mesmo
 // com deslocamento curto (T032).
 export const SWIPE_VELOCITY_THRESHOLD = 700;
+// Duração (ms) da animação que manda o cartão pra fora da tela e atraso (ms)
+// do reset de posição — o reset precisa começar DEPOIS da saída porque o JS é
+// avisado no início da saída (ver onEnd e o useEffect do componente).
+export const SWIPE_EXIT_DURATION_MS = 240;
+export const SWIPE_RESET_DELAY_MS = 280;
 
 // T032 — decide se o arraste completa o swipe: "like" (para a direita),
 // "pass" (para a esquerda) ou null (volta ao centro com spring). A velocidade
@@ -52,10 +58,12 @@ export default function DiscoveryCard({ profile, style, onSwipe }) {
   const translateY = useSharedValue(0);
 
   // Volta ao centro quando o perfil muda (swipe concluído, baralho avançado
-  // pelos botões ou reinício) — acontece depois que a saída já animou.
+  // pelos botões ou reinício). O reset é ADIADO para depois da animação de
+  // saída: o JS é avisado no início da saída (ver onEnd), então sem o delay o
+  // cartão voltaria ao centro antes de terminar de voar pra fora da tela.
   useEffect(() => {
-    translateX.value = 0;
-    translateY.value = 0;
+    translateX.value = withDelay(SWIPE_RESET_DELAY_MS, withTiming(0, { duration: 0 }));
+    translateY.value = withDelay(SWIPE_RESET_DELAY_MS, withTiming(0, { duration: 0 }));
   }, [profile, translateX, translateY]);
 
   // T032 — gesto Pan: o arraste segue o dedo (com deslocamento vertical
@@ -74,10 +82,15 @@ export default function DiscoveryCard({ profile, style, onSwipe }) {
         return;
       }
       const offScreen = direction === "like" ? windowWidth * 1.4 : -windowWidth * 1.4;
-      translateX.value = withTiming(offScreen, { duration: 240 }, (finished) => {
-        if (finished && onSwipe) runOnJS(onSwipe)(direction);
-      });
-      translateY.value = withTiming(translateY.value, { duration: 240 });
+      translateX.value = withTiming(offScreen, { duration: SWIPE_EXIT_DURATION_MS });
+      translateY.value = withTiming(translateY.value, { duration: SWIPE_EXIT_DURATION_MS });
+      // Aviso o JS AGORA e nunca dentro do callback de completion do
+      // withTiming: chamar runOnJS (scheduleOnRN) lá dentro é um bug conhecido
+      // do Worklets 0.10.0 — use-after-free/SIGABRT no Android com New
+      // Architecture (reanimated#9786) — e o Expo Go embute o worklets nativo,
+      // então evitamos o padrão. O reset da posição é adiado pelo useEffect
+      // para o cartão terminar de sair da tela.
+      if (onSwipe) runOnJS(onSwipe)(direction);
     });
 
   // Rotação proporcional ao arraste (até ±12°) dá o "peso" visual do gesto.
