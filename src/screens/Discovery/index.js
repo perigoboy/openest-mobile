@@ -1,4 +1,4 @@
-// Discovery — redesign liquid glass (FRONT-ONLY, baralho mockado).
+// Discovery â€” redesign liquid glass (FRONT-ONLY, baralho mockado).
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -7,8 +7,13 @@ import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { MOCK_PROFILES } from "./mockProfiles";
 import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPreferences";
+import { FALLBACK_LOCATION, distanceKm, loadLocation, requestLocation } from "../../services/userLocation";
 
-function distanceToKm(profile) {
+function distanceToKm(profile, userLocation) {
+  if (profile?.latitude != null && profile?.longitude != null && userLocation) {
+    const km = distanceKm(userLocation, { latitude: profile.latitude, longitude: profile.longitude });
+    if (Number.isFinite(km)) return km;
+  }
   const raw = String(profile?.distance || "").replace(",", ".");
   const match = raw.match(/([\d.]+)/);
   return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
@@ -23,12 +28,12 @@ function matchesGender(profile, gender) {
   return true;
 }
 
-export function applyPreferences(profiles, prefs) {
+export function applyPreferences(profiles, prefs, userLocation) {
   const active = { ...DEFAULT_PREFERENCES, ...(prefs || {}) };
   return (profiles || []).filter((p) => {
     const age = Number(p.age);
     if (!Number.isFinite(age) || age < active.minAge || age > active.maxAge) return false;
-    if (distanceToKm(p) > active.maxDistanceKm) return false;
+    if (distanceToKm(p, userLocation) > active.maxDistanceKm) return false;
     return matchesGender(p, active.gender);
   });
 }
@@ -42,7 +47,8 @@ function shortFilterLabel(prefs) {
 export default function Discovery({ navigation }) {
   const [index, setIndex] = useState(0);
   const [prefs, setPrefs] = useState(DEFAULT_PREFERENCES);
-  const deck = applyPreferences(MOCK_PROFILES, prefs);
+  const [userLocation, setUserLocation] = useState(null);
+  const deck = applyPreferences(MOCK_PROFILES, prefs, userLocation || FALLBACK_LOCATION);
   const profile = deck[index] || null;
 
   useEffect(() => {
@@ -50,8 +56,14 @@ export default function Discovery({ navigation }) {
     (async () => {
       const saved = await loadPreferences();
       if (mounted) setPrefs(saved);
+      const storedLoc = await loadLocation();
+      if (mounted && storedLoc) setUserLocation(storedLoc);
+      // Captura a posiÃ§Ã£o real (pede permissÃ£o no device; no front sem
+      // permissÃ£o mantÃ©m o fallback sem quebrar).
+      const result = await requestLocation();
+      if (mounted && result?.location) setUserLocation(result.location);
     })();
-    // Recarrega ao voltar dos Filtros (quando há listener de foco).
+    // Recarrega ao voltar dos Filtros (quando hÃ¡ listener de foco).
     const unsubscribe =
       navigation && typeof navigation.addListener === "function"
         ? navigation.addListener("focus", async () => {
@@ -122,11 +134,11 @@ export default function Discovery({ navigation }) {
           ) : (
             <BlurView intensity={40} tint="light" style={styles.empty}>
               <Text style={styles.emptyTitle}>
-                {deck.length === 0 ? "Nenhum perfil nos filtros atuais" : "Você viu todo mundo"}
+                {deck.length === 0 ? "Nenhum perfil nos filtros atuais" : "VocÃª viu todo mundo"}
               </Text>
               <Text style={styles.emptySubtitle}>
                 {deck.length === 0
-                  ? "Ajuste a distância, a idade ou o grupo para ver mais pessoas."
+                  ? "Ajuste a distÃ¢ncia, a idade ou o grupo para ver mais pessoas."
                   : "Volte aos filtros para ampliar a busca."}
               </Text>
               {deck.length === 0 ? (
