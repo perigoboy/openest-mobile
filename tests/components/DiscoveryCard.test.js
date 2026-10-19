@@ -45,7 +45,7 @@ function renderCard(overrides = {}) {
 describe("DiscoveryCard — conteúdo (T029)", () => {
   it("renderiza a foto do perfil no ImageBackground", () => {
     renderCard();
-    expect(screen.getByTestId("discovery-card").props.source.uri).toBe(PROFILE.photo);
+    expect(screen.getByTestId("discovery-card-image").props.source.uri).toBe(PROFILE.photo);
   });
 
   it("renderiza nome e idade", () => {
@@ -67,10 +67,10 @@ describe("DiscoveryCard — conteúdo (T029)", () => {
 });
 
 describe("DiscoveryCard — layout (T029)", () => {
-  it("ocupa 80% da altura da tela", () => {
+  it("preenche o espaço disponível com no máximo 80% da altura da tela", () => {
     renderCard();
     const expected = Math.round(Dimensions.get("window").height * CARD_SCREEN_RATIO);
-    expect(screen.getByTestId("discovery-card")).toHaveStyle({ height: expected });
+    expect(screen.getByTestId("discovery-card")).toHaveStyle({ flex: 1, maxHeight: expected });
   });
 
   it("tem gradiente escuro na base sobre a foto", () => {

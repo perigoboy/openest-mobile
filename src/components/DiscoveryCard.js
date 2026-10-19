@@ -1,7 +1,8 @@
 // src/components/DiscoveryCard.js
 // T029 — cartão da tela de Descoberta: a foto do perfil (ImageBackground)
-// ocupa ~80% da altura da tela com um gradiente escuro na base, exibindo
-// nome, idade, localização e distância com excelência visual.
+// ocupa o espaço disponível da área do cartão, com teto de ~80% da altura da
+// tela, com gradiente escuro na base, exibindo nome, idade, localização e
+// distância com excelência visual — sem nunca cobrir topBar ou barra de ações.
 import React from "react";
 import { View, Text, ImageBackground, StyleSheet, useWindowDimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -16,32 +17,41 @@ export default function DiscoveryCard({ profile, style }) {
   if (!profile) return null;
 
   return (
-    <ImageBackground
+    // O View externo É o cartão (layout + testID): o ImageBackground do RN
+    // repassa o testID somente para o Image interno, então o container de
+    // layout precisa existir por conta própria. O flex faz o cartão preencher
+    // exatamente o espaço livre da Discovery (nunca cobre a topBar com avatar
+    // e filtros nem a barra de ações) e o maxHeight numérico limita a 80% da
+    // tela — a altura fixa em % estourava para cima e escondia o botão de filtros.
+    <View
       testID="discovery-card"
-      source={{ uri: profile.photo }}
-      imageStyle={styles.image}
-      resizeMode="cover"
-      // 80% da tela, limitado ao espaço disponível (a Discovery tem topBar
-      // e barra de ações; em telas pequenas o flex previne overflow).
-      style={[styles.card, { height: Math.round(windowHeight * CARD_SCREEN_RATIO), maxHeight: "100%" }, style]}
+      style={[styles.card, { flex: 1, maxHeight: Math.round(windowHeight * CARD_SCREEN_RATIO) }, style]}
     >
-      {profile.kindLabel ? (
-        <BlurView intensity={30} tint="light" style={styles.badge}>
-          <Ionicons name="people" size={16} color="#6D1BC7" />
-          <Text style={styles.badgeText}>{profile.kindLabel}</Text>
-        </BlurView>
-      ) : null}
+      <ImageBackground
+        testID="discovery-card-image"
+        source={{ uri: profile.photo }}
+        imageStyle={styles.image}
+        resizeMode="cover"
+        style={styles.fill}
+      >
+        {profile.kindLabel ? (
+          <BlurView intensity={30} tint="light" style={styles.badge}>
+            <Ionicons name="people" size={16} color="#6D1BC7" />
+            <Text style={styles.badgeText}>{profile.kindLabel}</Text>
+          </BlurView>
+        ) : null}
 
-      <LinearGradient testID="discovery-shade" colors={["transparent", "rgba(0,0,0,0.85)"]} style={styles.shade} />
+        <LinearGradient testID="discovery-shade" colors={["transparent", "rgba(0,0,0,0.85)"]} style={styles.shade} />
 
-      <View style={styles.footer}>
-        <Text testID="discovery-name" style={styles.name}>
-          {profile.name}, {profile.age}
-        </Text>
-        <Text style={styles.loc}>Mora em {profile.neighborhood}, {profile.city}</Text>
-        <Text style={styles.dist}>{profile.distance}</Text>
-      </View>
-    </ImageBackground>
+        <View style={styles.footer}>
+          <Text testID="discovery-name" style={styles.name}>
+            {profile.name}, {profile.age}
+          </Text>
+          <Text style={styles.loc}>Mora em {profile.neighborhood}, {profile.city}</Text>
+          <Text style={styles.dist}>{profile.distance}</Text>
+        </View>
+      </ImageBackground>
+    </View>
   );
 }
 
@@ -55,6 +65,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.7)",
   },
   image: { borderRadius: 28 },
+  fill: { flex: 1 },
   badge: {
     position: "absolute",
     top: 16,

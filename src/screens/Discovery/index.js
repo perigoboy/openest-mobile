@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
   brandLogo: { width: 72, height: 48 },
   pill: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 132, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.85)", backgroundColor: "rgba(42,10,85,0.45)", zIndex: 2, flexShrink: 1 },
   pillText: { fontSize: 12, fontWeight: "700", color: "#fff", flexShrink: 1 },
-  cardArea: { flex: 1, justifyContent: "center", paddingVertical: 12 },
+  cardArea: { flex: 1, justifyContent: "center", paddingVertical: 12, overflow: "hidden" },
   empty: { borderRadius: 28, padding: 24, alignItems: "center", gap: 10, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.7)" },
   emptyTitle: { fontSize: 18, fontWeight: "800", color: "#2A0A55", textAlign: "center" },
   emptySubtitle: { fontSize: 14, color: "#5B5B66", textAlign: "center" },
