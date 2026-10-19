@@ -6,7 +6,7 @@ import React from "react";
 import { Dimensions } from "react-native";
 import { render, screen } from "@testing-library/react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import DiscoveryCard, { CARD_SCREEN_RATIO } from "../../src/components/DiscoveryCard";
+import DiscoveryCard, { CARD_SCREEN_RATIO, resolveSwipe, SWIPE_VELOCITY_THRESHOLD } from "../../src/components/DiscoveryCard";
 
 // Módulos nativos que não rodam no Jest (mesmos mocks dos testes das telas).
 jest.mock("expo-linear-gradient", () => {
@@ -89,5 +89,38 @@ describe("DiscoveryCard — badge de casal/grupo (T029)", () => {
   it("não exibe badge quando o perfil é single", () => {
     renderCard();
     expect(screen.queryByText("Casal")).toBeNull();
+  });
+});
+
+describe("DiscoveryCard — gesto de swipe (T032)", () => {
+  it("resolveSwipe: arraste curto não completa o swipe", () => {
+    expect(resolveSwipe(0, 0, 100)).toBeNull();
+    expect(resolveSwipe(40, 0, 100)).toBeNull();
+    expect(resolveSwipe(-40, 0, 100)).toBeNull();
+  });
+
+  it("resolveSwipe: ultrapassar o threshold completa like (direita) ou pass (esquerda)", () => {
+    expect(resolveSwipe(100, 0, 100)).toBe("like");
+    expect(resolveSwipe(130, 0, 100)).toBe("like");
+    expect(resolveSwipe(-100, 0, 100)).toBe("pass");
+  });
+
+  it("resolveSwipe: flick rápido completa mesmo com deslocamento curto", () => {
+    expect(resolveSwipe(30, SWIPE_VELOCITY_THRESHOLD, 100)).toBe("like");
+    expect(resolveSwipe(-30, -SWIPE_VELOCITY_THRESHOLD, 100)).toBe("pass");
+  });
+
+  it("resolveSwipe: velocidade contrária ao arraste não completa o swipe", () => {
+    expect(resolveSwipe(-30, SWIPE_VELOCITY_THRESHOLD, 100)).toBeNull();
+    expect(resolveSwipe(30, -SWIPE_VELOCITY_THRESHOLD, 100)).toBeNull();
+  });
+
+  it("renderiza com onSwipe e os selos CURTIR/PASSAR", () => {
+    render(<DiscoveryCard profile={PROFILE} onSwipe={jest.fn()} />);
+    expect(screen.getByTestId("discovery-card")).toBeTruthy();
+    expect(screen.getByTestId("discovery-stamp-like")).toBeTruthy();
+    expect(screen.getByTestId("discovery-stamp-pass")).toBeTruthy();
+    expect(screen.getByText("CURTIR")).toBeTruthy();
+    expect(screen.getByText("PASSAR")).toBeTruthy();
   });
 });

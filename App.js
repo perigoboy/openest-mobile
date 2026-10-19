@@ -1,6 +1,7 @@
 import "react-native-gesture-handler"; // precisa ser o 1º import do arquivo
 import React from "react";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 
@@ -23,15 +24,19 @@ const navigationTheme = {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <ToastProvider>
-        <AuthProvider>
-          <NavigationContainer theme={navigationTheme}>
-            <StatusBar style="light" />
-            <Routes />
-          </NavigationContainer>
-        </AuthProvider>
-      </ToastProvider>
-    </SafeAreaProvider>
+    // T032 — root obrigatório do react-native-gesture-handler: sem ele
+    // os gestos (ex.: swipe do card de Descoberta) não são reconhecidos.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <NavigationContainer theme={navigationTheme}>
+              <StatusBar style="light" />
+              <Routes />
+            </NavigationContainer>
+          </AuthProvider>
+        </ToastProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

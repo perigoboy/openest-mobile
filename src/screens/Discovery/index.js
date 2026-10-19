@@ -104,6 +104,13 @@ export default function Discovery({ navigation }) {
     setIndex((i) => i + 1);
   }
 
+  // T032 — o gesto de swipe do card aciona a MESMA lógica dos botões Like/Pass
+  // (hoje ambos avançam o baralho via next()); `direction` fica documentado
+  // para o T038 separar os efeitos de curtir/passar.
+  function handleCardSwipe(direction) {
+    next();
+  }
+
   return (
     <LinearGradient colors={["#3D0A7A", "#8B3BD6", "#E3BFFF", "#F9F1FF"]} locations={[0, 0.4, 0.75, 1]} style={styles.bg}>
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
@@ -131,7 +138,7 @@ export default function Discovery({ navigation }) {
 
         <View style={styles.cardArea}>
           {profile ? (
-            <DiscoveryCard profile={profile} />
+            <DiscoveryCard profile={profile} onSwipe={handleCardSwipe} />
           ) : (
             <BlurView intensity={40} tint="light" style={styles.empty}>
               <Text style={styles.emptyTitle}>

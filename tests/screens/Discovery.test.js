@@ -2,13 +2,26 @@
 // FRONT-ONLY: garante que o redesign liquid glass mantém o fluxo do protótipo
 // (baralho, ações e reinício) navegando pela bottom tab.
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react-native';
+import { render, screen, fireEvent, act } from '@testing-library/react-native';
 import Discovery, { applyPreferences } from '../../src/screens/Discovery';
 import { MOCK_PROFILES } from '../../src/screens/Discovery/mockProfiles';
+import { DiscoveryCard } from '../../src/components';
 
 jest.mock('../../src/services/searchPreferences', () => {
   const actual = jest.requireActual('../../src/services/searchPreferences');
   return { ...actual, loadPreferences: jest.fn(async () => actual.DEFAULT_PREFERENCES) };
+});
+
+jest.mock('../../src/components', () => {
+  const ReactActual = require('react');
+  const actual = jest.requireActual('../../src/components');
+  return {
+    ...actual,
+    // Envolve o card real registrando as props: permite testar o onSwipe do
+    // gesto de swipe (T032) mantendo a renderização verdadeira nos demais
+    // testes deste arquivo.
+    DiscoveryCard: jest.fn((props) => ReactActual.createElement(actual.DiscoveryCard, props)),
+  };
 });
 
 function renderDiscovery() {
@@ -80,5 +93,20 @@ describe('Discovery — redesign liquid glass', () => {
     // Sem localização do usuário e sem string "distance", a distância fica
     // infinita e o filtro corta de forma conservadora.
     expect(applyPreferences([nearby, far], { minAge: 18, maxAge: 35, maxDistanceKm: 2, gender: 'all' })).toEqual([]);
+  });
+
+  it('swipe no card aciona a mesma lógica dos botões (T032)', () => {
+    DiscoveryCard.mockClear();
+    renderDiscovery();
+
+    const props = DiscoveryCard.mock.calls[DiscoveryCard.mock.calls.length - 1][0];
+    expect(typeof props.onSwipe).toBe('function');
+
+    // Mesmo efeito dos botões Like/Pass: avança o baralho.
+    act(() => props.onSwipe('like'));
+    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Juliana Ferraz');
+
+    act(() => props.onSwipe('pass'));
+    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Julia Maria');
   });
 });
