@@ -1,0 +1,26 @@
+import { StyleSheet } from "react-native";
+
+export const searchStyles = StyleSheet.create({
+  bg: { flex: 1 },
+  safe: { flex: 1, paddingHorizontal: 18 },
+  header: { height: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(42,10,85,0.45)", borderWidth: 1, borderColor: "rgba(255,255,255,0.7)" },
+  title: { fontSize: 20, fontWeight: "800", color: "#fff" },
+  content: { paddingVertical: 12, paddingBottom: 120 },
+  card: { borderRadius: 28, overflow: "hidden", padding: 20, gap: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.7)" },
+  section: { fontSize: 15, fontWeight: "800", color: "#2A0A55", marginTop: 8 },
+  label: { fontSize: 14, fontWeight: "800", color: "#2A0A55", marginBottom: 8, letterSpacing: 0.2 },
+  row: { flexDirection: "row", gap: 12 },
+  half: { flex: 1 },
+  stepper: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "rgba(255,255,255,0.85)", borderRadius: 16, padding: 6, borderWidth: 1, borderColor: "rgba(109,27,199,0.2)" },
+  stepBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(109,27,199,0.1)" },
+  stepValue: { fontSize: 16, fontWeight: "800", color: "#2A0A55" },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.7)", borderWidth: 1, borderColor: "rgba(109,27,199,0.25)" },
+  chipActive: { backgroundColor: "#6D1BC7", borderColor: "#6D1BC7" },
+  chipText: { fontSize: 13, fontWeight: "700", color: "#6D1BC7" },
+  chipTextActive: { color: "#fff" },
+  save: { marginTop: 10, backgroundColor: "#6D1BC7", borderRadius: 16, paddingVertical: 14, alignItems: "center" },
+  saveDisabled: { opacity: 0.6 },
+  saveText: { color: "#fff", fontSize: 16, fontWeight: "800" },
+});
