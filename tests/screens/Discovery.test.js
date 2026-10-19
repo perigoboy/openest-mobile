@@ -62,4 +62,17 @@ describe('Discovery — redesign liquid glass', () => {
     fireEvent.press(screen.getByTestId('btn-restart'));
     expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Julio e Talita');
   });
+
+  it('calcula a distância real (Haversine) quando há coordenadas (T028)', () => {
+    // Perfis com lat/long (formato previsto para o backend do Discovery Engine).
+    const nearby = { name: 'Perto', age: 26, latitude: -3.7172, longitude: -38.5005, kind: 'single' };
+    const far = { name: 'Longe', age: 26, latitude: -3.7907, longitude: -38.5069, kind: 'single' };
+    // Usuário em Fortaleza centro: Perto (~3,1 km) passa; Longe (~7 km) é cortado a 5 km.
+    const user = { latitude: -3.7277, longitude: -38.5267 };
+    expect(applyPreferences([nearby, far], { minAge: 18, maxAge: 35, maxDistanceKm: 5, gender: 'all' }, user).map((p) => p.name))
+      .toEqual(['Perto']);
+    // Sem localização do usuário e sem string "distance", a distância fica
+    // infinita e o filtro corta de forma conservadora.
+    expect(applyPreferences([nearby, far], { minAge: 18, maxAge: 35, maxDistanceKm: 2, gender: 'all' })).toEqual([]);
+  });
 });

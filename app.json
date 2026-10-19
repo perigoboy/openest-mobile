@@ -31,7 +31,14 @@
           "microphonePermission": false
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "O Openest usa sua localização para mostrar pessoas perto de você no Discovery.",
+          "locationAlwaysAndWhenInUsePermission": "O Openest usa sua localização para mostrar pessoas perto de você no Discovery."
+        }
+      ]
     ]
   }
 }
