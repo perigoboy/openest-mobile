@@ -93,6 +93,13 @@ export default function Discovery({ navigation }) {
     }
   }
 
+  // Avatar do próprio usuário (topo) → tela de Configurações (tab "Settings").
+  function openSettings() {
+    if (navigation && typeof navigation.navigate === "function") {
+      navigation.navigate("Settings");
+    }
+  }
+
   function next() {
     setIndex((i) => i + 1);
   }
@@ -101,9 +108,16 @@ export default function Discovery({ navigation }) {
     <LinearGradient colors={["#3D0A7A", "#8B3BD6", "#E3BFFF", "#F9F1FF"]} locations={[0, 0.4, 0.75, 1]} style={styles.bg}>
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
         <View style={styles.topBar}>
-          <View style={styles.avatarRing}>
+          <TouchableOpacity
+            testID="btn-my-avatar"
+            style={styles.avatarRing}
+            onPress={openSettings}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Abrir configurações"
+          >
             <Image source={{ uri: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80" }} style={styles.avatar} />
-          </View>
+          </TouchableOpacity>
           <View style={styles.brandCenter} pointerEvents="none">
             <Image testID="discovery-brand" source={require("../../../assets/logo-chama.png")} style={styles.brandLogo} resizeMode="contain" />
           </View>

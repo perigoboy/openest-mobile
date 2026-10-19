@@ -33,6 +33,12 @@ describe('Discovery — redesign liquid glass', () => {
     );
   });
 
+  it('navega para Configurações ao tocar na foto do próprio usuário', () => {
+    const { navigation } = renderDiscovery();
+    fireEvent.press(screen.getByTestId('btn-my-avatar'));
+    expect(navigation.navigate).toHaveBeenCalledWith('Settings');
+  });
+
   it('mostra o primeiro perfil do baralho mockado', () => {
     renderDiscovery();
     expect(screen.getByTestId('discovery-card')).toBeTruthy();
