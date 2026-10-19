@@ -31,3 +31,14 @@ beforeAll(() => {
 afterAll(() => {
   console.error = originalConsoleError;
 });
+
+// -------------------------------------------------------------
+// 5. react-native-gesture-handler + react-native-reanimated (T032)
+// -------------------------------------------------------------
+// RNGH: mocks do módulo nativo. O preset jest-expo já usa a chave
+// `setupFiles`, então carregamos o jestSetup oficial daqui (os
+// jest.mock registrados aqui valem antes de os testes importarem o lib).
+require('react-native-gesture-handler/jestSetup');
+// Reanimated 4: setup oficial de testes (guia "Testing with Jest") —
+// fornece o runtime de UI simulado e matchers como toHaveAnimatedStyle.
+require('react-native-reanimated').setUpTests();
