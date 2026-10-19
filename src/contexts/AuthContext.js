@@ -4,6 +4,39 @@ import api from '../services/api';
 
 const AuthContext = createContext({});
 
+// Mock de desenvolvimento (FRONT-ONLY, sem backend).
+// Permite acessar todas as telas pelo fluxo normal de Login com:
+// usuário: "admin" (ou "admin@openest.local") + senha: "123".
+// Nenhuma rota foi removida/alterada — só um atalho antes da chamada real à API.
+const MOCK_CREDENTIALS = {
+  username: 'admin',
+  email: 'admin@openest.local',
+  password: '123',
+};
+
+const MOCK_USER = {
+  id: 'mock-admin-id',
+  name: 'Admin (mock)',
+  username: 'admin',
+  email: 'admin@openest.local',
+  foto_url: '',
+  verificado: true,
+};
+
+const MOCK_TOKEN = 'mock-token-admin-123';
+
+function isMockCredentials(email, password) {
+  const normalizedEmail = String(email || '')
+    .trim()
+    .toLowerCase();
+  const normalizedPassword = String(password || '').trim();
+  return (
+    normalizedPassword === MOCK_CREDENTIALS.password &&
+    (normalizedEmail === MOCK_CREDENTIALS.username ||
+      normalizedEmail === MOCK_CREDENTIALS.email)
+  );
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -30,6 +63,14 @@ export function AuthProvider({ children }) {
 
   // Função de Login
   async function signIn(email, password) {
+    // Atalho FRONT-ONLY: admin/123 entra sem backend para liberar as telas.
+    if (isMockCredentials(email, password)) {
+      await SecureStore.setItemAsync('user_token', MOCK_TOKEN);
+      await SecureStore.setItemAsync('user_data', JSON.stringify(MOCK_USER));
+      setUser(MOCK_USER);
+      return;
+    }
+
     try {
       // T011: rota real do backend é POST /api/users/login (ver server.js:
       // app.use("/api/users", userRoutes) + userRoutes.js: router.post('/login', ...))

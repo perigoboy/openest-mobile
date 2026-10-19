@@ -96,6 +96,10 @@ export default function Login({ navigation }) {
                 >
                   <Text style={styles.registerText}>Não tem uma conta? Cadastre-se</Text>
                 </TouchableOpacity>
+
+                <View style={styles.mockHint}>
+                  <Text style={styles.mockHintText}>Acesso front (sem backend): admin / 123</Text>
+                </View>
               </View>
             </BlurView>
           </View>
@@ -191,5 +195,18 @@ const styles = StyleSheet.create({
   forgotPasswordText: {
     color: 'rgba(255,255,255,0.7)',
     fontSize: 14,
+  },
+  mockHint: {
+    marginTop: 16,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  mockHintText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

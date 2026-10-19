@@ -1,17 +1,12 @@
-// src/routes/AppRoutes.js
-// T005 — Abas (Bottom Tabs) de navegação PRIVADA: telas que só existem
-// depois do login. Ícones via @expo/vector-icons (já vem com o Expo).
-//
-// Observação: este arquivo foi recriado na T025 — o commit 2dbf7ab (T011)
-// havia sobrescrito este arquivo por engano com o conteúdo do App.js,
-// quebrando o roteamento da área logada.
-//
-// T025 — registro da tela de Configurações (Settings) no menu de abas.
-
+// Navegação privada com bottom tab flutuante em vidro (liquid glass).
+// Mantém todas as rotas: Discovery, Matches, Chat (oculto), Profile,
+// Settings e PhotoVerification (oculta). Só muda o visual da tab bar.
 import React from "react";
+import { View, StyleSheet, TouchableOpacity } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { colors } from "../styles/theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Discovery from "../screens/Discovery";
 import Matches from "../screens/Matches";
@@ -30,22 +25,53 @@ const ICONS = {
   Settings: "settings",
 };
 
+// Só estes 4 aparecem na barra — Chat e PhotoVerification continuam
+// registrados (deep-link), mas sem botão.
+const VISIBLE_TABS = ["Discovery", "Matches", "Profile", "Settings"];
+const FULLSCREEN_ROUTES = ["Chat", "PhotoVerification"];
+
+function GlassTabBar({ state, navigation }) {
+  const insets = useSafeAreaInsets();
+  const activeName = state.routes[state.index]?.name;
+  if (FULLSCREEN_ROUTES.includes(activeName)) return null;
+
+  const tabs = state.routes.filter((r) => VISIBLE_TABS.includes(r.name));
+
+  return (
+    <View style={[styles.barWrap, { bottom: Math.max(insets.bottom, 12) }]} pointerEvents="box-none">
+      <View style={styles.bar}>
+        <BlurView intensity={65} tint="light" style={StyleSheet.absoluteFill} />
+        <View style={styles.barRow}>
+          {tabs.map((route) => {
+            const focused = route.name === activeName;
+            const icon = ICONS[route.name];
+            return (
+              <View key={route.key} style={styles.tabSlot}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={route.name}
+                  accessibilityState={{ selected: focused }}
+                  style={[styles.iconWrap, focused && styles.iconActive]}
+                  onPress={() => navigation.navigate(route.name)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name={icon} color="#6D1BC7" size={24} />
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export default function AppRoutes() {
   return (
     <Tab.Navigator
       initialRouteName="Discovery"
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-        },
-        tabBarIcon: ({ color, size }) => (
-          <Ionicons name={ICONS[route.name]} color={color} size={size} />
-        ),
-      })}
+      tabBar={(props) => <GlassTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Discovery" component={Discovery} options={{ title: "Descobrir" }} />
       <Tab.Screen name="Matches" component={Matches} options={{ title: "Conversas" }} />
@@ -74,3 +100,52 @@ export default function AppRoutes() {
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  barWrap: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    alignItems: "center",
+  },
+  bar: {
+    width: "100%",
+    height: 68,
+    borderRadius: 34,
+    overflow: "hidden",
+    backgroundColor: "rgba(244,236,255,0.92)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.9)",
+    shadowColor: "#2A0A55",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.28,
+    shadowRadius: 26,
+    elevation: 10,
+  },
+  barRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 6,
+  },
+  tabSlot: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconActive: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(109,27,199,0.22)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.85)",
+  },
+});
