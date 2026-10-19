@@ -1,15 +1,85 @@
 // Discovery — redesign liquid glass (FRONT-ONLY, baralho mockado).
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { MOCK_PROFILES } from "./mockProfiles";
+import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPreferences";
 
-export default function Discovery() {
+function distanceToKm(profile) {
+  const raw = String(profile?.distance || "").replace(",", ".");
+  const match = raw.match(/([\d.]+)/);
+  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+}
+
+function matchesGender(profile, gender) {
+  if (!gender || gender === "all") return true;
+  if (gender === "women") return profile.kind === "single";
+  if (gender === "men") return profile.kind === "single";
+  if (gender === "couples") return profile.kind === "couple";
+  if (gender === "groups") return profile.kind === "group";
+  return true;
+}
+
+export function applyPreferences(profiles, prefs) {
+  const active = { ...DEFAULT_PREFERENCES, ...(prefs || {}) };
+  return (profiles || []).filter((p) => {
+    const age = Number(p.age);
+    if (!Number.isFinite(age) || age < active.minAge || age > active.maxAge) return false;
+    if (distanceToKm(p) > active.maxDistanceKm) return false;
+    return matchesGender(p, active.gender);
+  });
+}
+
+function shortFilterLabel(prefs) {
+  if (prefs.gender !== "all" || prefs.minAge !== 18 || prefs.maxAge !== 35) return "Filtros";
+  if (prefs.maxDistanceKm < 500) return `${String(prefs.maxDistanceKm).replace(".", ",")} km`;
+  return "Perto de mim";
+}
+
+export default function Discovery({ navigation }) {
   const [index, setIndex] = useState(0);
-  const profile = MOCK_PROFILES[index] || null;
+  const [prefs, setPrefs] = useState(DEFAULT_PREFERENCES);
+  const deck = applyPreferences(MOCK_PROFILES, prefs);
+  const profile = deck[index] || null;
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const saved = await loadPreferences();
+      if (mounted) setPrefs(saved);
+    })();
+    // Recarrega ao voltar dos Filtros (quando há listener de foco).
+    const unsubscribe =
+      navigation && typeof navigation.addListener === "function"
+        ? navigation.addListener("focus", async () => {
+            const saved = await loadPreferences();
+            if (mounted) {
+              setPrefs(saved);
+              setIndex(0);
+            }
+          })
+        : undefined;
+    return () => {
+      mounted = false;
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
+  }, []);
+
+  function openFilters() {
+    if (navigation && typeof navigation.navigate === "function") {
+      navigation.navigate("SearchPreferences", {
+        initial: prefs,
+        onApply: (clean) => {
+          setPrefs(clean);
+          setIndex(0);
+        },
+      });
+    }
+  }
+
   function next() {
     setIndex((i) => i + 1);
   }
@@ -24,10 +94,12 @@ export default function Discovery() {
           <View style={styles.brandCenter} pointerEvents="none">
             <Image testID="discovery-brand" source={require("../../../assets/logo-chama.png")} style={styles.brandLogo} resizeMode="contain" />
           </View>
-          <BlurView intensity={55} tint="dark" style={styles.pill}>
-            <Ionicons name="options" size={16} color="#fff" />
-            <Text style={styles.pillText} numberOfLines={1}>Perto de mim</Text>
-          </BlurView>
+          <TouchableOpacity testID="btn-filters" onPress={openFilters} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Abrir filtros de busca">
+            <BlurView intensity={55} tint="dark" style={styles.pill}>
+              <Ionicons name="options" size={16} color="#fff" />
+              <Text style={styles.pillText} numberOfLines={1}>{shortFilterLabel(prefs)}</Text>
+            </BlurView>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.cardArea}>
@@ -49,10 +121,23 @@ export default function Discovery() {
             </View>
           ) : (
             <BlurView intensity={40} tint="light" style={styles.empty}>
-              <Text style={styles.emptyTitle}>Você viu todo mundo</Text>
-              <TouchableOpacity testID="btn-restart" style={styles.restart} onPress={() => setIndex(0)}>
-                <Text style={styles.restartText}>Ver de novo</Text>
-              </TouchableOpacity>
+              <Text style={styles.emptyTitle}>
+                {deck.length === 0 ? "Nenhum perfil nos filtros atuais" : "Você viu todo mundo"}
+              </Text>
+              <Text style={styles.emptySubtitle}>
+                {deck.length === 0
+                  ? "Ajuste a distância, a idade ou o grupo para ver mais pessoas."
+                  : "Volte aos filtros para ampliar a busca."}
+              </Text>
+              {deck.length === 0 ? (
+                <TouchableOpacity testID="btn-open-filters" style={styles.restart} onPress={openFilters}>
+                  <Text style={styles.restartText}>Ajustar filtros</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity testID="btn-restart" style={styles.restart} onPress={() => setIndex(0)}>
+                  <Text style={styles.restartText}>Ver de novo</Text>
+                </TouchableOpacity>
+              )}
             </BlurView>
           )}
         </View>
@@ -99,7 +184,8 @@ const styles = StyleSheet.create({
   loc: { marginTop: 4, fontSize: 15, color: "rgba(255,255,255,0.92)" },
   dist: { fontSize: 14, color: "rgba(255,255,255,0.82)" },
   empty: { borderRadius: 28, padding: 24, alignItems: "center", gap: 10, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.7)" },
-  emptyTitle: { fontSize: 18, fontWeight: "800", color: "#2A0A55" },
+  emptyTitle: { fontSize: 18, fontWeight: "800", color: "#2A0A55", textAlign: "center" },
+  emptySubtitle: { fontSize: 14, color: "#5B5B66", textAlign: "center" },
   restart: { backgroundColor: "#6D1BC7", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999 },
   restartText: { color: "#fff", fontWeight: "800" },
   actions: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 22, marginTop: 8, paddingBottom: 136 },

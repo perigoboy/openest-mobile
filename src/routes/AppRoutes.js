@@ -9,6 +9,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Discovery from "../screens/Discovery";
+import SearchPreferences from "../screens/SearchPreferences";
 import Matches from "../screens/Matches";
 import Chat from "../screens/Chat";
 import Profile from "../screens/Profile";
@@ -25,10 +26,11 @@ const ICONS = {
   Settings: "settings",
 };
 
-// Só estes 4 aparecem na barra — Chat e PhotoVerification continuam
-// registrados (deep-link), mas sem botão.
+// Só estes 4 aparecem na barra — Chat, SearchPreferences e
+// PhotoVerification continuam registrados (deep-link/navegação interna),
+// mas sem botão.
 const VISIBLE_TABS = ["Discovery", "Matches", "Profile", "Settings"];
-const FULLSCREEN_ROUTES = ["Chat", "PhotoVerification"];
+const FULLSCREEN_ROUTES = ["Chat", "SearchPreferences", "PhotoVerification"];
 
 function GlassTabBar({ state, navigation }) {
   const insets = useSafeAreaInsets();
@@ -74,6 +76,11 @@ export default function AppRoutes() {
       screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Discovery" component={Discovery} options={{ title: "Descobrir" }} />
+      <Tab.Screen
+        name="SearchPreferences"
+        component={SearchPreferences}
+        options={{ tabBarButton: () => null, tabBarStyle: { display: "none" } }}
+      />
       <Tab.Screen name="Matches" component={Matches} options={{ title: "Conversas" }} />
       {/*
         "Chat" fica fora da tab bar visível (aberto a partir de um item da
