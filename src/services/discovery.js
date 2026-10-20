@@ -50,6 +50,15 @@ export function normalizeProfile(user) {
   };
 }
 
+// T033 — cache local de perfis já vistos: remove do baralho os IDs já
+// avaliados na sessão (like/pass por swipe ou botões) para que não repitam
+// em buscas e recarregamentos. Complementa o filtro do backend, que só
+// exclui interações já registradas no servidor.
+export function excludeSeenProfiles(profiles, seenIds) {
+  if (!seenIds || seenIds.size === 0) return profiles || [];
+  return (profiles || []).filter((profile) => !seenIds.has(profile.id));
+}
+
 // Monta a query string aceita por /api/users/buscar a partir das preferências
 // do mobile (T027). `gender` do mobile vira `status` (status_relacionamento)
 // para casais/grupos; singles/mulheres/homens não têm campo equivalente no

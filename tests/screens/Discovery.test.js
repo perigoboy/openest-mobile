@@ -112,9 +112,10 @@ describe('Discovery — redesign liquid glass', () => {
     expect(screen.getByText('Não há mais perfis por aqui')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('btn-reload'));
-    // O recarregar refaz o GET e volta ao primeiro card.
+    // O recarregar refaz o GET; como todos os 4 perfis mockados foram
+    // avaliados, o cache T033 os filtra e o estado vazio permanece.
     await waitFor(() => expect(fetchCompatibleProfiles).toHaveBeenCalledTimes(2));
-    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Julio e Talita');
+    expect(screen.getByTestId('discovery-empty')).toBeTruthy();
   });
 
   it('calcula a distância real (Haversine) quando há coordenadas (T028)', () => {
@@ -195,5 +196,31 @@ describe('Discovery — estados de loading e vazio (T031)', () => {
     fireEvent.press(reload);
     expect(await screen.findByTestId('discovery-card')).toBeTruthy();
     expect(fetchCompatibleProfiles).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Discovery — cache local de perfis já vistos (T033)', () => {
+  it('não repete na recarga os perfis avaliados por swipe e botão', async () => {
+    const [first, second, third] = MOCK_PROFILES;
+    // 1ª busca devolve dois perfis; a recarga devolve os mesmos + um novo.
+    fetchCompatibleProfiles
+      .mockResolvedValueOnce({ profiles: [first, second], hasMore: false, total: 2 })
+      .mockResolvedValueOnce({ profiles: [first, second, third], hasMore: true, total: 3 });
+
+    const navigation = { navigate: jest.fn(), goBack: jest.fn() };
+    render(<Discovery navigation={navigation} />);
+    expect((await screen.findByTestId('discovery-name')).props.children.join('')).toContain(first.name);
+
+    // Avalia o primeiro via swipe (T032) e o segundo pelo botão de like.
+    const props = DiscoveryCard.mock.calls[DiscoveryCard.mock.calls.length - 1][0];
+    await act(async () => props.onSwipe('pass'));
+    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain(second.name);
+    fireEvent.press(screen.getByTestId('btn-like'));
+    expect(screen.getByTestId('discovery-empty')).toBeTruthy();
+
+    // Recarrega: first e second já foram vistos na sessão, só third entra.
+    fireEvent.press(screen.getByTestId('btn-reload'));
+    expect((await screen.findByTestId('discovery-name')).props.children.join('')).toContain(third.name);
+    expect(screen.queryByText(new RegExp(first.name))).toBeNull();
   });
 });
