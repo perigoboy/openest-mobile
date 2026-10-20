@@ -1,7 +1,7 @@
 // Discovery — redesign liquid glass + integração do Discovery Engine (T030):
 // o baralho vem de GET /api/users/buscar (serviço src/services/discovery.js),
 // que já respeita os filtros do backend e exclui perfis já interagidos.
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -9,7 +9,7 @@ import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { DiscoveryCard, DiscoverySkeleton } from "../../components";
 import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPreferences";
-import { fetchCompatibleProfiles } from "../../services/discovery";
+import { excludeSeenProfiles, fetchCompatibleProfiles } from "../../services/discovery";
 import { distanceKm } from "../../services/userLocation";
 
 function distanceToKm(profile, userLocation) {
@@ -56,15 +56,19 @@ export default function Discovery({ navigation }) {
   const [loading, setLoading] = useState(true);
   // T031 — distingue "acabaram os perfis" de "a API falhou" no estado vazio.
   const [loadFailed, setLoadFailed] = useState(false);
+  // T033 — cache local (em memória/sessão) dos IDs já avaliados no Discovery.
+  // Set em ref: mutação não precisa re-render, o filtro acontece no load.
+  const seenIdsRef = useRef(new Set());
   const profile = deck[index] || null;
 
   // Busca os perfis compatíveis na API e reseta o baralho para o 1º card.
+  // IDs já vistos na sessão são filtrados aqui para não repetirem (T033).
   const loadProfiles = useCallback(async (currentPrefs) => {
     setLoading(true);
     setLoadFailed(false);
     try {
       const { profiles } = await fetchCompatibleProfiles(currentPrefs);
-      setDeck(profiles);
+      setDeck(excludeSeenProfiles(profiles, seenIdsRef.current));
       setIndex(0);
     } catch (error) {
       console.error("Erro ao buscar perfis compatíveis:", error?.response?.status, error?.response?.data || error?.message);
@@ -120,6 +124,10 @@ export default function Discovery({ navigation }) {
   }
 
   function next() {
+    // T033 — avalia o card atual (like/pass/superlike): guarda o ID no cache
+    // de vistos da sessão antes de avançar o baralho.
+    const current = deck[index];
+    if (current?.id != null) seenIdsRef.current.add(current.id);
     setIndex((i) => i + 1);
   }
 
