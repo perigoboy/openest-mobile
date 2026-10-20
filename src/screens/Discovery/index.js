@@ -9,7 +9,7 @@ import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { DiscoveryCard, DiscoverySkeleton } from "../../components";
 import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPreferences";
-import { excludeSeenProfiles, fetchCompatibleProfiles } from "../../services/discovery";
+import { excludeSeenProfiles, fetchCompatibleProfiles, undoInteraction } from "../../services/discovery";
 import { distanceKm } from "../../services/userLocation";
 
 function distanceToKm(profile, userLocation) {
@@ -60,6 +60,9 @@ export default function Discovery({ navigation }) {
   // Set em ref: mutação não precisa re-render, o filtro acontece no load.
   const seenIdsRef = useRef(new Set());
   const profile = deck[index] || null;
+  // T034 — último card avaliado + ação tomada (like/pass/superlike): alimenta
+  // o botão "Desfazer" (undo de nível único, o último swipe apenas).
+  const [lastAction, setLastAction] = useState(null);
 
   // Busca os perfis compatíveis na API e reseta o baralho para o 1º card.
   // IDs já vistos na sessão são filtrados aqui para não repetirem (T033).
@@ -123,19 +126,49 @@ export default function Discovery({ navigation }) {
     }
   }
 
-  function next() {
+  function next(action = "pass") {
+    const current = deck[index];
+    if (!current) return;
     // T033 — avalia o card atual (like/pass/superlike): guarda o ID no cache
     // de vistos da sessão antes de avançar o baralho.
-    const current = deck[index];
-    if (current?.id != null) seenIdsRef.current.add(current.id);
+    if (current.id != null) seenIdsRef.current.add(current.id);
+    // T034 — registra a ação para o desfazer.
+    setLastAction({ profile: current, action });
     setIndex((i) => i + 1);
   }
 
-  // T032 — o gesto de swipe do card aciona a MESMA lógica dos botões Like/Pass
-  // (hoje ambos avançam o baralho via next()); `direction` fica documentado
-  // para o T038 separar os efeitos de curtir/passar.
+  // T034 — desfazer o último swipe/avaliação.
+  // A reversão no backend é fire-and-forget: o 404 significa que ainda não há
+  // interação registrada no servidor (ex.: rede caiu na hora de registrar) e
+  // falhas não impedem o restore local — a UI segue o estado local.
+  function handleUndo() {
+    if (!lastAction || loading) return;
+    const undone = lastAction.profile;
+    setLastAction(null);
+    if (undone?.id != null) {
+      undoInteraction(undone.id).catch((error) =>
+        console.error(
+          "Desfazer: reversão no servidor não confirmada:",
+          error?.response?.status || error?.message
+        )
+      );
+    }
+    // Sai do cache de vistos e volta ao TOPO da pilha (index 0). O restante do
+    // baralho fica só com os ainda não avaliados, preservando a continuidade.
+    if (undone?.id != null) seenIdsRef.current.delete(undone.id);
+    setDeck((prev) => {
+      const rest = prev.filter((p) => p.id !== undone?.id);
+      const unseen = rest.filter((p) => !seenIdsRef.current.has(p.id));
+      return [undone, ...unseen];
+    });
+    setIndex(0);
+  }
+
+  // T032 — o gesto de swipe do card aciona a MESMA lógica dos botões Like/Pass,
+  // registrando a direção avaliada (T034 guarda para o desfazer); o disparo
+  // das curtidas/passagens à API fica para o T038 separar os efeitos.
   function handleCardSwipe(direction) {
-    next();
+    next(direction);
   }
 
   return (
@@ -200,19 +233,36 @@ export default function Discovery({ navigation }) {
             </BlurView>
           )}
         </View>
+        {lastAction && !loading && (
+          // T034 — desfazer do último swipe: aparece após a primeira avaliação
+          // e some depois de usado (undo de nível único).
+          <View style={styles.undoRow}>
+            <BlurView intensity={40} tint="light" style={[styles.glass, styles.undoGlass]}>
+              <TouchableOpacity
+                testID="btn-undo"
+                style={styles.hit}
+                onPress={handleUndo}
+                accessibilityRole="button"
+                accessibilityLabel="Desfazer último swipe"
+              >
+                <Ionicons name="arrow-undo" size={22} color="#6D1BC7" />
+              </TouchableOpacity>
+            </BlurView>
+          </View>
+        )}
         <View style={styles.actions}>
           <BlurView intensity={40} tint="light" style={[styles.glass, styles.pass, !profile && styles.glassDisabled]}>
-            <TouchableOpacity testID="btn-pass" style={styles.hit} onPress={next} disabled={!profile} accessibilityRole="button" accessibilityLabel="Passar perfil">
+            <TouchableOpacity testID="btn-pass" style={styles.hit} onPress={() => next("pass")} disabled={!profile} accessibilityRole="button" accessibilityLabel="Passar perfil">
               <Ionicons name="close" size={32} color="#7B1FCF" />
             </TouchableOpacity>
           </BlurView>
           <BlurView intensity={40} tint="light" style={[styles.glass, styles.super, styles.small, !profile && styles.glassDisabled]}>
-            <TouchableOpacity testID="btn-superlike" style={styles.hit} onPress={next} disabled={!profile} accessibilityRole="button" accessibilityLabel="Super like">
+            <TouchableOpacity testID="btn-superlike" style={styles.hit} onPress={() => next("superlike")} disabled={!profile} accessibilityRole="button" accessibilityLabel="Super like">
               <Ionicons name="star" size={20} color="#2D9CDB" />
             </TouchableOpacity>
           </BlurView>
           <BlurView intensity={40} tint="light" style={[styles.glass, styles.like, !profile && styles.glassDisabled]}>
-            <TouchableOpacity testID="btn-like" style={styles.hit} onPress={next} disabled={!profile} accessibilityRole="button" accessibilityLabel="Curtir perfil">
+            <TouchableOpacity testID="btn-like" style={styles.hit} onPress={() => next("like")} disabled={!profile} accessibilityRole="button" accessibilityLabel="Curtir perfil">
               <Ionicons name="heart" size={30} color="#12B76A" />
             </TouchableOpacity>
           </BlurView>
@@ -240,6 +290,8 @@ const styles = StyleSheet.create({
   restart: { backgroundColor: "#6D1BC7", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999 },
   restartText: { color: "#fff", fontWeight: "800" },
   actions: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 22, marginTop: 8, paddingBottom: 136 },
+  undoRow: { alignItems: "center", marginTop: 8 },
+  undoGlass: { width: 52, height: 52, borderRadius: 26, borderColor: "#6D1BC7" },
   glass: { width: 72, height: 72, borderRadius: 36, overflow: "hidden", alignItems: "center", justifyContent: "center", borderWidth: 1.6, backgroundColor: "rgba(255,255,255,0.65)" },
   glassDisabled: { opacity: 0.4 },
   small: { width: 72, height: 72, borderRadius: 36 },

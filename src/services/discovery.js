@@ -82,3 +82,12 @@ export async function fetchCompatibleProfiles(prefs) {
     total: data?.total_resultados ?? raw.length,
   };
 }
+
+// T034 — desfazer (undo) da última interação com um perfil.
+// DELETE /api/desfazer/:usuarioId (openest-api interactionRoutes): remove o
+// último like/pass registrado pelo usuário no servidor e o match/conversa
+// vazia originado por esse like.
+export async function undoInteraction(targetUserId) {
+  const { data } = await api.delete(`/api/desfazer/${targetUserId}`);
+  return data;
+}
