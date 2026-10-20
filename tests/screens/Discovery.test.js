@@ -6,7 +6,7 @@ import React from 'react';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react-native';
 import Discovery, { applyPreferences } from '../../src/screens/Discovery';
 import { MOCK_PROFILES } from '../../src/screens/Discovery/mockProfiles';
-import { fetchCompatibleProfiles } from '../../src/services/discovery';
+import { fetchCompatibleProfiles, undoInteraction } from '../../src/services/discovery';
 import { DiscoveryCard } from '../../src/components';
 
 jest.mock('../../src/services/searchPreferences', () => {
@@ -26,6 +26,8 @@ jest.mock('../../src/services/discovery', () => {
       hasMore: false,
       total: profiles.length,
     })),
+    // T034 — reversão da última ação no backend (evita rede real nos testes).
+    undoInteraction: jest.fn(async () => ({ message: 'Interação desfeita!' })),
   };
 });
 
@@ -222,5 +224,75 @@ describe('Discovery — cache local de perfis já vistos (T033)', () => {
     fireEvent.press(screen.getByTestId('btn-reload'));
     expect((await screen.findByTestId('discovery-name')).props.children.join('')).toContain(third.name);
     expect(screen.queryByText(new RegExp(first.name))).toBeNull();
+  });
+});
+
+describe('Discovery — desfazer último swipe (T034)', () => {
+  it('não mostra o botão Desfazer antes de nenhuma avaliação', async () => {
+    await renderDiscovery();
+    expect(screen.queryByTestId('btn-undo')).toBeNull();
+  });
+
+  it('desfaz o último like: reverte na API, remove do cache e devolve o card ao topo', async () => {
+    const { navigation } = await renderDiscovery(); // baralho: Julio, Juliana, Julia, Sofia
+
+    fireEvent.press(screen.getByTestId('btn-like')); // avalia Julio e Talita
+    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Juliana Ferraz');
+    expect(screen.getByTestId('btn-undo')).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('btn-undo'));
+    await waitFor(() => expect(undoInteraction).toHaveBeenCalledWith('proto-casal-1'));
+
+    // Card de volta ao TOPO da pilha (index 0).
+    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Julio e Talita');
+    // Undo de nível único: botão some até a próxima avaliação.
+    expect(screen.queryByTestId('btn-undo')).toBeNull();
+
+    // O ID saiu do cache de vistos: recarregar via filtros traz o perfil de
+    // volta (se ainda estivesse no cache, viria Juliana no lugar).
+    fireEvent.press(screen.getByTestId('btn-filters'));
+    const params = navigation.navigate.mock.calls.find(([name]) => name === 'SearchPreferences')[1];
+    await act(async () => params.onApply({ minAge: 18, maxAge: 35, maxDistanceKm: 25, gender: 'all' }));
+    expect(fetchCompatibleProfiles).toHaveBeenCalledTimes(2);
+    expect((await screen.findByTestId('discovery-name')).props.children.join('')).toContain('Julio e Talita');
+  });
+
+  it('desfaz a ação vinda do gesto de swipe (T032 + T034)', async () => {
+    DiscoveryCard.mockClear();
+    await renderDiscovery();
+
+    const props = DiscoveryCard.mock.calls[DiscoveryCard.mock.calls.length - 1][0];
+    await act(async () => props.onSwipe('like'));
+    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Juliana Ferraz');
+
+    fireEvent.press(screen.getByTestId('btn-undo'));
+    await waitFor(() => expect(undoInteraction).toHaveBeenCalledWith('proto-casal-1'));
+    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Julio e Talita');
+  });
+
+  it('desfaz quando o baralho esgotou, saindo do estado vazio', async () => {
+    await renderDiscovery();
+    fireEvent.press(screen.getByTestId('btn-like'));
+    fireEvent.press(screen.getByTestId('btn-pass'));
+    fireEvent.press(screen.getByTestId('btn-superlike'));
+    fireEvent.press(screen.getByTestId('btn-like')); // esgota: Sofia avaliada
+    expect(screen.getByTestId('discovery-empty')).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('btn-undo'));
+    await waitFor(() => expect(undoInteraction).toHaveBeenCalledWith('proto-sofia'));
+    expect(screen.queryByTestId('discovery-empty')).toBeNull();
+    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Sofia Espanha');
+  });
+
+  it('falha de rede no backend não impede o restore local do card', async () => {
+    undoInteraction.mockRejectedValueOnce(Object.assign(new Error('offline'), { response: { status: 500 } }));
+    await renderDiscovery();
+
+    fireEvent.press(screen.getByTestId('btn-like'));
+    fireEvent.press(screen.getByTestId('btn-undo'));
+
+    // Restore local imediato (console.error é capturado globalmente no setup).
+    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Julio e Talita');
+    await waitFor(() => expect(undoInteraction).toHaveBeenCalledTimes(1));
   });
 });

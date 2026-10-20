@@ -9,10 +9,12 @@ import {
   excludeSeenProfiles,
   fetchCompatibleProfiles,
   normalizeProfile,
+  undoInteraction,
 } from '../../src/services/discovery';
 
 jest.mock('../../src/services/api', () => ({
   get: jest.fn(),
+  delete: jest.fn(),
 }));
 
 beforeEach(() => {
@@ -112,5 +114,19 @@ describe('discovery — fetchCompatibleProfiles (T030)', () => {
     expect(result.total).toBe(17);
     expect(result.profiles).toHaveLength(1);
     expect(result.profiles[0]).toMatchObject({ name: 'Rita', age: 24, kind: 'single', kindLabel: null, photo: 'https://x/r.jpg' });
+  });
+});
+
+describe('discovery — undoInteraction (T034)', () => {
+  it('dispara DELETE /api/desfazer/:usuarioId e devolve a resposta', async () => {
+    api.delete.mockResolvedValueOnce({ data: { message: 'Interação desfeita!', tipo: 'like', match_removido: false } });
+    const data = await undoInteraction('uuid-42');
+    expect(api.delete).toHaveBeenCalledWith('/api/desfazer/uuid-42');
+    expect(data).toEqual({ message: 'Interação desfeita!', tipo: 'like', match_removido: false });
+  });
+
+  it('propaga o erro quando a reversão falha (para o caller tratar)', async () => {
+    api.delete.mockRejectedValueOnce(new Error('offline'));
+    await expect(undoInteraction('uuid-42')).rejects.toThrow('offline');
   });
 });
