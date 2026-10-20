@@ -1,15 +1,32 @@
 // tests/screens/Discovery.test.js
-// FRONT-ONLY: garante que o redesign liquid glass mantém o fluxo do protótipo
-// (baralho, ações e reinício) navegando pela bottom tab.
+// T030 — Discovery Engine: a tela consome fetchCompatibleProfiles (mockado)
+// e exibe o baralho vindo da API; os testes de filtragem continuam cobrindo a
+// função pura applyPreferences (T027/T028).
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react-native';
 import Discovery, { applyPreferences } from '../../src/screens/Discovery';
 import { MOCK_PROFILES } from '../../src/screens/Discovery/mockProfiles';
+import { fetchCompatibleProfiles } from '../../src/services/discovery';
 import { DiscoveryCard } from '../../src/components';
 
 jest.mock('../../src/services/searchPreferences', () => {
   const actual = jest.requireActual('../../src/services/searchPreferences');
   return { ...actual, loadPreferences: jest.fn(async () => actual.DEFAULT_PREFERENCES) };
+});
+
+// Mock do serviço T030: o baralho passa a vir da API (aqui devolvemos o
+// MOCK_PROFILES já no shape normalizado do card para os testes de fluxo).
+jest.mock('../../src/services/discovery', () => {
+  const actual = jest.requireActual('../../src/services/discovery');
+  const { MOCK_PROFILES: profiles } = jest.requireActual('../../src/screens/Discovery/mockProfiles');
+  return {
+    ...actual,
+    fetchCompatibleProfiles: jest.fn(async () => ({
+      profiles,
+      hasMore: false,
+      total: profiles.length,
+    })),
+  };
 });
 
 jest.mock('../../src/components', () => {
@@ -24,21 +41,28 @@ jest.mock('../../src/components', () => {
   };
 });
 
-function renderDiscovery() {
+async function renderDiscovery() {
   const navigation = { navigate: jest.fn(), goBack: jest.fn() };
   render(<Discovery navigation={navigation} />);
+  // Aguarda a resolução do fetch da API (T030) antes das asserções do baralho.
+  await screen.findByTestId('discovery-card');
   return { navigation };
 }
 
 describe('Discovery — redesign liquid glass', () => {
-  it('mostra a logo central e o botão de filtros', () => {
-    renderDiscovery();
+  it('busca os perfis compatíveis na API na montagem (T030)', async () => {
+    await renderDiscovery();
+    expect(fetchCompatibleProfiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('mostra a logo central e o botão de filtros', async () => {
+    await renderDiscovery();
     expect(screen.getByTestId('discovery-brand')).toBeTruthy();
     expect(screen.getByTestId('btn-filters')).toBeTruthy();
   });
 
-  it('abre a tela de filtros pelo botão do topo', () => {
-    const { navigation } = renderDiscovery();
+  it('abre a tela de filtros pelo botão do topo', async () => {
+    const { navigation } = await renderDiscovery();
     fireEvent.press(screen.getByTestId('btn-filters'));
     expect(navigation.navigate).toHaveBeenCalledWith(
       'SearchPreferences',
@@ -46,14 +70,14 @@ describe('Discovery — redesign liquid glass', () => {
     );
   });
 
-  it('navega para Configurações ao tocar na foto do próprio usuário', () => {
-    const { navigation } = renderDiscovery();
+  it('navega para Configurações ao tocar na foto do próprio usuário', async () => {
+    const { navigation } = await renderDiscovery();
     fireEvent.press(screen.getByTestId('btn-my-avatar'));
     expect(navigation.navigate).toHaveBeenCalledWith('Settings');
   });
 
-  it('mostra o primeiro perfil do baralho mockado', () => {
-    renderDiscovery();
+  it('mostra o primeiro perfil devolvido pela API', async () => {
+    await renderDiscovery();
     expect(screen.getByTestId('discovery-card')).toBeTruthy();
     expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Julio e Talita');
   });
@@ -68,8 +92,8 @@ describe('Discovery — redesign liquid glass', () => {
     expect(applyPreferences(MOCK_PROFILES, { minAge: 40, maxAge: 50, maxDistanceKm: 500, gender: 'all' })).toEqual([]);
   });
 
-  it('avança o baralho em cada ação e permite recomeçar', () => {
-    renderDiscovery();
+  it('avança o baralho em cada ação e permite recomeçar', async () => {
+    await renderDiscovery();
     fireEvent.press(screen.getByTestId('btn-like'));
     expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Juliana Ferraz');
 
@@ -95,18 +119,18 @@ describe('Discovery — redesign liquid glass', () => {
     expect(applyPreferences([nearby, far], { minAge: 18, maxAge: 35, maxDistanceKm: 2, gender: 'all' })).toEqual([]);
   });
 
-  it('swipe no card aciona a mesma lógica dos botões (T032)', () => {
+  it('swipe no card aciona a mesma lógica dos botões (T032)', async () => {
     DiscoveryCard.mockClear();
-    renderDiscovery();
+    await renderDiscovery();
 
     const props = DiscoveryCard.mock.calls[DiscoveryCard.mock.calls.length - 1][0];
     expect(typeof props.onSwipe).toBe('function');
 
     // Mesmo efeito dos botões Like/Pass: avança o baralho.
-    act(() => props.onSwipe('like'));
+    await act(async () => props.onSwipe('like'));
     expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Juliana Ferraz');
 
-    act(() => props.onSwipe('pass'));
+    await act(async () => props.onSwipe('pass'));
     expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Julia Maria');
   });
 });

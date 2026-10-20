@@ -1,14 +1,16 @@
-// Discovery â€” redesign liquid glass (FRONT-ONLY, baralho mockado).
-import React, { useEffect, useState } from "react";
+// Discovery — redesign liquid glass + integração do Discovery Engine (T030):
+// o baralho vem de GET /api/users/buscar (serviço src/services/discovery.js),
+// que já respeita os filtros do backend e exclui perfis já interagidos.
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { MOCK_PROFILES } from "./mockProfiles";
-import { DiscoveryCard } from "../../components";
+import { DiscoveryCard, Loader } from "../../components";
 import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPreferences";
-import { FALLBACK_LOCATION, distanceKm, loadLocation, requestLocation } from "../../services/userLocation";
+import { fetchCompatibleProfiles } from "../../services/discovery";
+import { distanceKm } from "../../services/userLocation";
 
 function distanceToKm(profile, userLocation) {
   if (profile?.latitude != null && profile?.longitude != null && userLocation) {
@@ -48,21 +50,34 @@ function shortFilterLabel(prefs) {
 export default function Discovery({ navigation }) {
   const [index, setIndex] = useState(0);
   const [prefs, setPrefs] = useState(DEFAULT_PREFERENCES);
-  const [userLocation, setUserLocation] = useState(null);
-  const deck = applyPreferences(MOCK_PROFILES, prefs, userLocation || FALLBACK_LOCATION);
+  // T030 — baralho vindo da API (Discovery Engine). O backend já aplica os
+  // filtros de idade/status/interesses e exclui perfis já interagidos.
+  const [deck, setDeck] = useState([]);
+  const [loading, setLoading] = useState(true);
   const profile = deck[index] || null;
+
+  // Busca os perfis compatíveis na API e reseta o baralho para o 1º card.
+  const loadProfiles = useCallback(async (currentPrefs) => {
+    setLoading(true);
+    try {
+      const { profiles } = await fetchCompatibleProfiles(currentPrefs);
+      setDeck(profiles);
+      setIndex(0);
+    } catch (error) {
+      console.error("Erro ao buscar perfis compatíveis:", error?.response?.status, error?.response?.data || error?.message);
+      setDeck([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       const saved = await loadPreferences();
-      if (mounted) setPrefs(saved);
-      const storedLoc = await loadLocation();
-      if (mounted && storedLoc) setUserLocation(storedLoc);
-      // Captura a posiÃ§Ã£o real (pede permissÃ£o no device; no front sem
-      // permissÃ£o mantÃ©m o fallback sem quebrar).
-      const result = await requestLocation();
-      if (mounted && result?.location) setUserLocation(result.location);
+      if (!mounted) return;
+      setPrefs(saved);
+      loadProfiles(saved);
     })();
     // Recarrega ao voltar dos Filtros (quando hÃ¡ listener de foco).
     const unsubscribe =
@@ -71,7 +86,7 @@ export default function Discovery({ navigation }) {
             const saved = await loadPreferences();
             if (mounted) {
               setPrefs(saved);
-              setIndex(0);
+              loadProfiles(saved);
             }
           })
         : undefined;
@@ -79,7 +94,7 @@ export default function Discovery({ navigation }) {
       mounted = false;
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, []);
+  }, [loadProfiles]);
 
   function openFilters() {
     if (navigation && typeof navigation.navigate === "function") {
@@ -87,7 +102,7 @@ export default function Discovery({ navigation }) {
         initial: prefs,
         onApply: (clean) => {
           setPrefs(clean);
-          setIndex(0);
+          loadProfiles(clean);
         },
       });
     }
@@ -137,7 +152,11 @@ export default function Discovery({ navigation }) {
         </View>
 
         <View style={styles.cardArea}>
-          {profile ? (
+          {loading ? (
+            // T030: loader inline enquanto a API responde (a T031 evolui para
+            // skeleton + estado vazio com recarregar).
+            <Loader />
+          ) : profile ? (
             <DiscoveryCard profile={profile} onSwipe={handleCardSwipe} />
           ) : (
             <BlurView intensity={40} tint="light" style={styles.empty}>
