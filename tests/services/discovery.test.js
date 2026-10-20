@@ -6,6 +6,7 @@ import {
   DISCOVERY_PAGE_SIZE,
   avatarFallback,
   buildSearchParams,
+  excludeSeenProfiles,
   fetchCompatibleProfiles,
   normalizeProfile,
 } from '../../src/services/discovery';
@@ -71,6 +72,21 @@ describe('discovery — normalizeProfile (T030)', () => {
     expect(profile.photo).toBe(avatarFallback('Time'));
     expect(profile.kind).toBe('group');
     expect(profile.kindLabel).toBe('Grupo');
+  });
+});
+
+describe('discovery — excludeSeenProfiles (T033)', () => {
+  const profiles = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  it('remove os perfis cujos IDs já foram avaliados na sessão', () => {
+    expect(excludeSeenProfiles(profiles, new Set(['b'])).map((p) => p.id)).toEqual(['a', 'c']);
+    expect(excludeSeenProfiles(profiles, new Set(['a', 'c'])).map((p) => p.id)).toEqual(['b']);
+  });
+
+  it('devolve a lista intacta com cache vazio/inexistente e trata lista nula', () => {
+    expect(excludeSeenProfiles(profiles, new Set())).toEqual(profiles);
+    expect(excludeSeenProfiles(profiles, null)).toEqual(profiles);
+    expect(excludeSeenProfiles(null, new Set(['a']))).toEqual([]);
   });
 });
 
