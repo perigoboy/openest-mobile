@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { DiscoveryCard, Loader } from "../../components";
+import { DiscoveryCard, DiscoverySkeleton } from "../../components";
 import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPreferences";
 import { fetchCompatibleProfiles } from "../../services/discovery";
 import { distanceKm } from "../../services/userLocation";
@@ -54,11 +54,14 @@ export default function Discovery({ navigation }) {
   // filtros de idade/status/interesses e exclui perfis já interagidos.
   const [deck, setDeck] = useState([]);
   const [loading, setLoading] = useState(true);
+  // T031 — distingue "acabaram os perfis" de "a API falhou" no estado vazio.
+  const [loadFailed, setLoadFailed] = useState(false);
   const profile = deck[index] || null;
 
   // Busca os perfis compatíveis na API e reseta o baralho para o 1º card.
   const loadProfiles = useCallback(async (currentPrefs) => {
     setLoading(true);
+    setLoadFailed(false);
     try {
       const { profiles } = await fetchCompatibleProfiles(currentPrefs);
       setDeck(profiles);
@@ -66,6 +69,7 @@ export default function Discovery({ navigation }) {
     } catch (error) {
       console.error("Erro ao buscar perfis compatíveis:", error?.response?.status, error?.response?.data || error?.message);
       setDeck([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -153,46 +157,54 @@ export default function Discovery({ navigation }) {
 
         <View style={styles.cardArea}>
           {loading ? (
-            // T030: loader inline enquanto a API responde (a T031 evolui para
-            // skeleton + estado vazio com recarregar).
-            <Loader />
+            // T031 — skeleton no layout do card enquanto a API responde: a
+            // tela nunca fica em branco durante o carregamento.
+            <DiscoverySkeleton />
           ) : profile ? (
             <DiscoveryCard profile={profile} onSwipe={handleCardSwipe} />
           ) : (
-            <BlurView intensity={40} tint="light" style={styles.empty}>
-              <Text style={styles.emptyTitle}>
-                {deck.length === 0 ? "Nenhum perfil nos filtros atuais" : "VocÃª viu todo mundo"}
+            <BlurView intensity={40} tint="light" style={styles.empty} testID="discovery-empty">
+              <Ionicons
+                name={loadFailed ? "cloud-offline-outline" : "sad-outline"}
+                size={42}
+                color="#6D1BC7"
+              />
+              <Text style={styles.emptyTitle} testID="empty-title">
+                {loadFailed ? "Não foi possível carregar os perfis" : "Não há mais perfis por aqui"}
               </Text>
               <Text style={styles.emptySubtitle}>
-                {deck.length === 0
-                  ? "Ajuste a distÃ¢ncia, a idade ou o grupo para ver mais pessoas."
-                  : "Volte aos filtros para ampliar a busca."}
+                {loadFailed
+                  ? "Verifique sua conexão e tente novamente."
+                  : "Volte mais tarde ou ajuste os filtros para ampliar a busca."}
               </Text>
-              {deck.length === 0 ? (
-                <TouchableOpacity testID="btn-open-filters" style={styles.restart} onPress={openFilters}>
-                  <Text style={styles.restartText}>Ajustar filtros</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity testID="btn-restart" style={styles.restart} onPress={() => setIndex(0)}>
-                  <Text style={styles.restartText}>Ver de novo</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                testID="btn-reload"
+                style={styles.restart}
+                onPress={() => loadProfiles(prefs)}
+                accessibilityRole="button"
+                accessibilityLabel="Recarregar perfis"
+              >
+                <Text style={styles.restartText}>{loadFailed ? "Tentar novamente" : "Recarregar"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity testID="btn-open-filters" onPress={openFilters} accessibilityRole="button">
+                <Text style={styles.emptyLink}>Ajustar filtros</Text>
+              </TouchableOpacity>
             </BlurView>
           )}
         </View>
         <View style={styles.actions}>
-          <BlurView intensity={40} tint="light" style={[styles.glass, styles.pass]}>
-            <TouchableOpacity testID="btn-pass" style={styles.hit} onPress={next} accessibilityRole="button" accessibilityLabel="Passar perfil">
+          <BlurView intensity={40} tint="light" style={[styles.glass, styles.pass, !profile && styles.glassDisabled]}>
+            <TouchableOpacity testID="btn-pass" style={styles.hit} onPress={next} disabled={!profile} accessibilityRole="button" accessibilityLabel="Passar perfil">
               <Ionicons name="close" size={32} color="#7B1FCF" />
             </TouchableOpacity>
           </BlurView>
-          <BlurView intensity={40} tint="light" style={[styles.glass, styles.super, styles.small]}>
-            <TouchableOpacity testID="btn-superlike" style={styles.hit} onPress={next} accessibilityRole="button" accessibilityLabel="Super like">
+          <BlurView intensity={40} tint="light" style={[styles.glass, styles.super, styles.small, !profile && styles.glassDisabled]}>
+            <TouchableOpacity testID="btn-superlike" style={styles.hit} onPress={next} disabled={!profile} accessibilityRole="button" accessibilityLabel="Super like">
               <Ionicons name="star" size={20} color="#2D9CDB" />
             </TouchableOpacity>
           </BlurView>
-          <BlurView intensity={40} tint="light" style={[styles.glass, styles.like]}>
-            <TouchableOpacity testID="btn-like" style={styles.hit} onPress={next} accessibilityRole="button" accessibilityLabel="Curtir perfil">
+          <BlurView intensity={40} tint="light" style={[styles.glass, styles.like, !profile && styles.glassDisabled]}>
+            <TouchableOpacity testID="btn-like" style={styles.hit} onPress={next} disabled={!profile} accessibilityRole="button" accessibilityLabel="Curtir perfil">
               <Ionicons name="heart" size={30} color="#12B76A" />
             </TouchableOpacity>
           </BlurView>
@@ -216,10 +228,12 @@ const styles = StyleSheet.create({
   empty: { borderRadius: 28, padding: 24, alignItems: "center", gap: 10, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.7)" },
   emptyTitle: { fontSize: 18, fontWeight: "800", color: "#2A0A55", textAlign: "center" },
   emptySubtitle: { fontSize: 14, color: "#5B5B66", textAlign: "center" },
+  emptyLink: { fontSize: 14, fontWeight: "700", color: "#6D1BC7", textDecorationLine: "underline", paddingVertical: 6 },
   restart: { backgroundColor: "#6D1BC7", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999 },
   restartText: { color: "#fff", fontWeight: "800" },
   actions: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 22, marginTop: 8, paddingBottom: 136 },
   glass: { width: 72, height: 72, borderRadius: 36, overflow: "hidden", alignItems: "center", justifyContent: "center", borderWidth: 1.6, backgroundColor: "rgba(255,255,255,0.65)" },
+  glassDisabled: { opacity: 0.4 },
   small: { width: 72, height: 72, borderRadius: 36 },
   pass: { borderColor: "#7B1FCF" },
   super: { borderColor: "#2D9CDB" },

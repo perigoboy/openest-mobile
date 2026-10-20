@@ -3,7 +3,7 @@
 // e exibe o baralho vindo da API; os testes de filtragem continuam cobrindo a
 // função pura applyPreferences (T027/T028).
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react-native';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react-native';
 import Discovery, { applyPreferences } from '../../src/screens/Discovery';
 import { MOCK_PROFILES } from '../../src/screens/Discovery/mockProfiles';
 import { fetchCompatibleProfiles } from '../../src/services/discovery';
@@ -39,6 +39,12 @@ jest.mock('../../src/components', () => {
     // testes deste arquivo.
     DiscoveryCard: jest.fn((props) => ReactActual.createElement(actual.DiscoveryCard, props)),
   };
+});
+
+beforeEach(() => {
+  // Zera contadores/chamadas entre testes; as implementações dos mocks
+  // (definidas nos factories) são preservadas pelo clearAllMocks.
+  jest.clearAllMocks();
 });
 
 async function renderDiscovery() {
@@ -92,7 +98,7 @@ describe('Discovery — redesign liquid glass', () => {
     expect(applyPreferences(MOCK_PROFILES, { minAge: 40, maxAge: 50, maxDistanceKm: 500, gender: 'all' })).toEqual([]);
   });
 
-  it('avança o baralho em cada ação e permite recomeçar', async () => {
+  it('avança o baralho em cada ação e recarrega quando ele acaba (T031)', async () => {
     await renderDiscovery();
     fireEvent.press(screen.getByTestId('btn-like'));
     expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Juliana Ferraz');
@@ -100,9 +106,14 @@ describe('Discovery — redesign liquid glass', () => {
     fireEvent.press(screen.getByTestId('btn-pass'));
     fireEvent.press(screen.getByTestId('btn-superlike'));
     fireEvent.press(screen.getByTestId('btn-like'));
-    expect(screen.getByTestId('btn-restart')).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId('btn-restart'));
+    // Esgotou o baralho: estado vazio com ação de recarregar (nunca em branco).
+    expect(screen.getByTestId('discovery-empty')).toBeTruthy();
+    expect(screen.getByText('Não há mais perfis por aqui')).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('btn-reload'));
+    // O recarregar refaz o GET e volta ao primeiro card.
+    await waitFor(() => expect(fetchCompatibleProfiles).toHaveBeenCalledTimes(2));
     expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Julio e Talita');
   });
 
@@ -132,5 +143,57 @@ describe('Discovery — redesign liquid glass', () => {
 
     await act(async () => props.onSwipe('pass'));
     expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Julia Maria');
+  });
+});
+
+describe('Discovery — estados de loading e vazio (T031)', () => {
+  it('exibe o skeleton enquanto a API não responde (nunca em branco)', async () => {
+    // Deixa o fetch pendente para segurar a tela no estado de carregamento.
+    let resolveFetch;
+    fetchCompatibleProfiles.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveFetch = resolve; })
+    );
+    const navigation = { navigate: jest.fn(), goBack: jest.fn() };
+    render(<Discovery navigation={navigation} />);
+
+    expect(screen.getByTestId('discovery-skeleton')).toBeTruthy();
+    expect(screen.queryByTestId('discovery-card')).toBeNull();
+
+    // Flush das microtasks: o effect inicia com await loadPreferences() e só
+    // então chama o fetch (que captura o resolve para o teste controlar).
+    await act(async () => {});
+    expect(fetchCompatibleProfiles).toHaveBeenCalledTimes(1);
+
+    await act(async () => resolveFetch({ profiles: MOCK_PROFILES, hasMore: false, total: MOCK_PROFILES.length }));
+    expect(screen.getByTestId('discovery-card')).toBeTruthy();
+    expect(screen.queryByTestId('discovery-skeleton')).toBeNull();
+  });
+
+  it('mostra estado vazio com botão de recarregar quando a API não devolve perfis', async () => {
+    fetchCompatibleProfiles.mockResolvedValueOnce({ profiles: [], hasMore: false, total: 0 });
+    const navigation = { navigate: jest.fn(), goBack: jest.fn() };
+    render(<Discovery navigation={navigation} />);
+
+    expect(await screen.findByTestId('discovery-empty')).toBeTruthy();
+    expect(screen.getByText('Não há mais perfis por aqui')).toBeTruthy();
+    expect(screen.getByTestId('btn-reload')).toBeTruthy();
+    // Ações ficam desabilitadas sem card — nada de baralho invisível ativo.
+    expect(screen.getByTestId('btn-like').props.accessibilityState?.disabled ?? screen.getByTestId('btn-like').props.disabled).toBe(true);
+  });
+
+  it('mostra estado de erro com "Tentar novamente" quando a API falha (T031)', async () => {
+    fetchCompatibleProfiles.mockRejectedValueOnce(new Error('network'));
+    const navigation = { navigate: jest.fn(), goBack: jest.fn() };
+    render(<Discovery navigation={navigation} />);
+
+    expect(await screen.findByTestId('discovery-empty')).toBeTruthy();
+    expect(screen.getByText('Não foi possível carregar os perfis')).toBeTruthy();
+    const reload = screen.getByTestId('btn-reload');
+    expect(reload).toBeTruthy();
+
+    // "Tentar novamente" refaz o GET e recupera o baralho.
+    fireEvent.press(reload);
+    expect(await screen.findByTestId('discovery-card')).toBeTruthy();
+    expect(fetchCompatibleProfiles).toHaveBeenCalledTimes(2);
   });
 });
