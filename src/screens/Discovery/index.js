@@ -25,6 +25,7 @@ import { avatarFallback, fetchCompatibleProfiles } from "../../services/discover
 import { likeProfile } from "../../services/interactions";
 import { distanceKm } from "../../services/userLocation";
 import { REPORT_REASONS, submitReport } from "../../services/moderation";
+import { blockUser } from "../../services/block";
 import { colors, radius, spacing, typography } from "../../styles/theme";
 
 function distanceToKm(profile, userLocation) {
@@ -241,6 +242,27 @@ export default function Discovery({ navigation }) {
     }
   }
 
+  // T037 — Bloquear usuário: dispara POST /api/bloquear e remove o perfil
+  // do baralho local imediatamente (critério de aceite: não aparece mais em
+  // nenhuma tela do app).
+  async function handleBlockUser(targetProfile) {
+    try {
+      await blockUser(targetProfile.id);
+      hiddenProfileIds.current.add(targetProfile.id);
+      setDeck((currentDeck) => [...currentDeck]);
+      Alert.alert(
+        "Usuário bloqueado",
+        "Este perfil não será mais exibido para você."
+      );
+    } catch (error) {
+      console.error("Erro ao bloquear usuário:", error);
+      Alert.alert(
+        "Não foi possível bloquear",
+        error?.response?.data?.error || "Tente novamente em alguns instantes."
+      );
+    }
+  }
+
   return (
     <LinearGradient colors={["#3D0A7A", "#8B3BD6", "#E3BFFF", "#F9F1FF"]} locations={[0, 0.4, 0.75, 1]} style={styles.bg}>
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
@@ -276,6 +298,7 @@ export default function Discovery({ navigation }) {
               profile={profile}
               onSwipe={handleCardSwipe}
               onReportPress={() => openReportModal(profile)}
+              onBlockPress={() => handleBlockUser(profile)}
             />
           ) : (
             <BlurView intensity={40} tint="light" style={styles.empty}>
