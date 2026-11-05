@@ -5,22 +5,24 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  StyleSheet,
-  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { DiscoveryCard, Loader } from "../../components";
+import { useAuth } from "../../contexts/AuthContext";
 import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPreferences";
-import { fetchCompatibleProfiles } from "../../services/discovery";
+import { avatarFallback, fetchCompatibleProfiles } from "../../services/discovery";
+import { likeProfile } from "../../services/interactions";
 import { distanceKm } from "../../services/userLocation";
 import { REPORT_REASONS, submitReport } from "../../services/moderation";
 import { colors, radius, spacing, typography } from "../../styles/theme";
@@ -61,6 +63,7 @@ function shortFilterLabel(prefs) {
 }
 
 export default function Discovery({ navigation }) {
+  const { user } = useAuth();
   const [index, setIndex] = useState(0);
   const [prefs, setPrefs] = useState(DEFAULT_PREFERENCES);
   const [reportTarget, setReportTarget] = useState(null);
@@ -72,6 +75,12 @@ export default function Discovery({ navigation }) {
   // filtros de idade/status/interesses e exclui perfis já interagidos.
   const [deck, setDeck] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [liking, setLiking] = useState(false);
+  const [matchProfile, setMatchProfile] = useState(null);
+  const isLiking = useRef(false);
+  const userPhoto = Array.isArray(user?.photos)
+    ? user.photos.find((photo) => typeof photo === "string" && photo.startsWith("http"))
+    : null;
   const visibleDeck = deck.filter(
     (item) => !hiddenProfileIds.current.has(item.id)
   );
@@ -140,11 +149,47 @@ export default function Discovery({ navigation }) {
     setIndex((i) => i + 1);
   }
 
-  // T032 — o gesto de swipe do card aciona a MESMA lógica dos botões Like/Pass
-  // (hoje ambos avançam o baralho via next()); `direction` fica documentado
-  // para o T038 separar os efeitos de curtir/passar.
+  const handleLike = useCallback(async () => {
+    if (!profile || isLiking.current) return;
+
+    isLiking.current = true;
+    setLiking(true);
+    try {
+      const isMatch = await likeProfile(profile.id);
+      if (isMatch) {
+        setMatchProfile(profile);
+      } else {
+        next();
+      }
+    } catch (error) {
+      console.error("Erro ao registrar curtida:", error?.response?.status, error?.response?.data || error?.message);
+      Alert.alert("Não foi possível curtir", "Tente novamente em instantes.");
+      next();
+    } finally {
+      isLiking.current = false;
+      setLiking(false);
+    }
+  }, [profile]);
+
   function handleCardSwipe(direction) {
+    if (isLiking.current) return;
+    if (direction === "like") {
+      return handleLike();
+    } else {
+      next();
+    }
+  }
+
+  function dismissMatch() {
+    setMatchProfile(null);
     next();
+  }
+
+  function openMatchChat() {
+    if (navigation && typeof navigation.navigate === "function" && matchProfile) {
+      navigation.navigate("Chat", { contact: matchProfile });
+    }
+    dismissMatch();
   }
 
   function openReportModal(targetProfile) {
@@ -256,17 +301,17 @@ export default function Discovery({ navigation }) {
         </View>
         <View style={styles.actions}>
           <BlurView intensity={40} tint="light" style={[styles.glass, styles.pass]}>
-            <TouchableOpacity testID="btn-pass" style={styles.hit} onPress={next} accessibilityRole="button" accessibilityLabel="Passar perfil">
+            <TouchableOpacity testID="btn-pass" style={styles.hit} onPress={next} disabled={liking} accessibilityRole="button" accessibilityLabel="Passar perfil">
               <Ionicons name="close" size={32} color="#7B1FCF" />
             </TouchableOpacity>
           </BlurView>
           <BlurView intensity={40} tint="light" style={[styles.glass, styles.super, styles.small]}>
-            <TouchableOpacity testID="btn-superlike" style={styles.hit} onPress={next} accessibilityRole="button" accessibilityLabel="Super like">
+            <TouchableOpacity testID="btn-superlike" style={styles.hit} onPress={next} disabled={liking} accessibilityRole="button" accessibilityLabel="Super like">
               <Ionicons name="star" size={20} color="#2D9CDB" />
             </TouchableOpacity>
           </BlurView>
           <BlurView intensity={40} tint="light" style={[styles.glass, styles.like]}>
-            <TouchableOpacity testID="btn-like" style={styles.hit} onPress={next} accessibilityRole="button" accessibilityLabel="Curtir perfil">
+            <TouchableOpacity testID="btn-like" style={styles.hit} onPress={handleLike} disabled={liking} accessibilityRole="button" accessibilityLabel="Curtir perfil">
               <Ionicons name="heart" size={30} color="#12B76A" />
             </TouchableOpacity>
           </BlurView>
@@ -374,6 +419,57 @@ export default function Discovery({ navigation }) {
           </View>
         </Modal>
       </SafeAreaView>
+      <Modal
+        visible={Boolean(matchProfile)}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={dismissMatch}
+      >
+        <View style={styles.matchOverlay}>
+          <View style={styles.matchModal} accessibilityViewIsModal>
+            <Text style={styles.matchTitle}>It's a Match!</Text>
+            <Text style={styles.matchSubtitle}>
+              Você e {matchProfile?.name} curtiram um ao outro.
+            </Text>
+            <View style={styles.matchPhotos}>
+              <Image
+                testID="match-modal-user-photo"
+                source={{
+                  uri:
+                    userPhoto ||
+                    (typeof user?.foto_url === "string" && user.foto_url.startsWith("http")
+                      ? user.foto_url
+                      : avatarFallback(user?.name)),
+                }}
+                style={styles.matchPhoto}
+              />
+              <Ionicons name="heart" size={26} color="#E84683" style={styles.matchHeart} />
+              <Image
+                testID="match-modal-profile-photo"
+                source={{ uri: matchProfile?.photo || avatarFallback(matchProfile?.name) }}
+                style={styles.matchPhoto}
+              />
+            </View>
+            <TouchableOpacity
+              testID="btn-match-chat"
+              style={styles.matchChatButton}
+              onPress={openMatchChat}
+              accessibilityRole="button"
+            >
+              <Text style={styles.matchChatText}>Enviar primeira mensagem</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="btn-match-continue"
+              style={styles.matchContinueButton}
+              onPress={dismissMatch}
+              accessibilityRole="button"
+            >
+              <Text style={styles.matchContinueText}>Continuar descobrindo</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -401,6 +497,17 @@ const styles = StyleSheet.create({
   super: { borderColor: "#2D9CDB" },
   like: { borderColor: "#12B76A" },
   hit: { width: "100%", height: "100%", alignItems: "center", justifyContent: "center" },
+  matchOverlay: { flex: 1, backgroundColor: "rgba(25, 5, 48, 0.78)", alignItems: "center", justifyContent: "center", padding: 24 },
+  matchModal: { width: "100%", maxWidth: 380, alignItems: "center", padding: 28, borderRadius: 28, backgroundColor: "#FFF9FF" },
+  matchTitle: { color: "#6D1BC7", fontSize: 30, fontWeight: "900", textAlign: "center" },
+  matchSubtitle: { color: "#5B5262", fontSize: 15, textAlign: "center", marginTop: 8 },
+  matchPhotos: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginVertical: 26 },
+  matchPhoto: { width: 104, height: 104, borderRadius: 52, borderWidth: 4, borderColor: "#fff" },
+  matchHeart: { marginHorizontal: -8, zIndex: 1 },
+  matchChatButton: { width: "100%", backgroundColor: "#6D1BC7", borderRadius: 999, paddingVertical: 15, alignItems: "center" },
+  matchChatText: { color: "#fff", fontSize: 15, fontWeight: "800" },
+  matchContinueButton: { paddingVertical: 14 },
+  matchContinueText: { color: "#6D1BC7", fontSize: 14, fontWeight: "700" },
   reportOverlay: {
     flex: 1,
     justifyContent: "flex-end",

@@ -1,6 +1,9 @@
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
+  RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -9,18 +12,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "../../components";
+import { fetchConversations } from "../../services/conversations";
 import { colors, radius, spacing, typography } from "../../styles/theme";
-
-const PREVIEW_CONVERSATIONS = [
-  {
-    id: "mariana-costa",
-    name: "Mariana Costa",
-    lastMessage: "Também gostei! Foi muito legal te conhecer 😊",
-    time: "14:32",
-    unreadCount: 2,
-    online: true,
-  },
-];
 
 function ConversationItem({ conversation, onPress }) {
   return (
@@ -32,40 +25,70 @@ function ConversationItem({ conversation, onPress }) {
       accessibilityRole="button"
       accessibilityLabel={`Abrir conversa com ${conversation.name}`}
     >
-      <View>
-        <Avatar
-          uri={conversation.avatar || conversation.photo}
-          name={conversation.name}
-          size={56}
-        />
-        {conversation.online ? <View style={styles.onlineIndicator} /> : null}
-      </View>
-
+      <Avatar
+        uri={conversation.img}
+        name={conversation.name}
+        size={56}
+      />
       <View style={styles.conversationContent}>
         <View style={styles.conversationHeading}>
           <Text style={styles.contactName} numberOfLines={1}>
             {conversation.name}
           </Text>
-          <Text style={styles.time}>{conversation.time}</Text>
+          <Text style={styles.time}>{conversation.timestamp}</Text>
         </View>
-        <View style={styles.conversationPreview}>
-          <Text style={styles.lastMessage} numberOfLines={1}>
-            {conversation.lastMessage}
-          </Text>
-          {conversation.unreadCount ? (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadCount}>{conversation.unreadCount}</Text>
-            </View>
-          ) : null}
-        </View>
+        <Text style={styles.lastMessage} numberOfLines={1}>
+          {conversation.lastMessage}
+        </Text>
       </View>
     </TouchableOpacity>
   );
 }
 
 export default function Matches({ navigation }) {
-  function openConversation(contact) {
-    navigation?.navigate?.("Chat", { contact });
+  const [conversations, setConversations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadConversations = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      const result = await fetchConversations();
+      setConversations(result);
+    } catch (error) {
+      console.error(
+        "Erro ao carregar conversas:",
+        error?.response?.status,
+        error?.response?.data || error?.message
+      );
+      Alert.alert(
+        "Erro",
+        error?.response?.data?.error ||
+          "Não foi possível carregar suas conversas. Tente novamente."
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
+
+  function openConversation(conversation) {
+    navigation?.navigate?.("Chat", {
+      conversationId: conversation.id,
+      contact: {
+        name: conversation.name,
+        avatar: conversation.img,
+      },
+    });
   }
 
   return (
@@ -75,32 +98,52 @@ export default function Matches({ navigation }) {
         <Text style={styles.subtitle}>Seus matches e mensagens</Text>
       </View>
 
-      <FlatList
-        testID="conversations-list"
-        data={PREVIEW_CONVERSATIONS}
-        keyExtractor={(conversation) => conversation.id}
-        renderItem={({ item }) => (
-          <ConversationItem
-            conversation={item}
-            onPress={() => openConversation(item)}
-          />
-        )}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons
-              name="chatbubbles-outline"
-              size={42}
-              color={colors.textMuted}
+      {loading ? (
+        <View style={styles.loading} testID="conversations-loading">
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          testID="conversations-list"
+          data={conversations}
+          keyExtractor={(conversation) => String(conversation.id)}
+          renderItem={({ item }) => (
+            <ConversationItem
+              conversation={item}
+              onPress={() => openConversation(item)}
             />
-            <Text style={styles.emptyTitle}>Suas conversas aparecem aqui</Text>
-            <Text style={styles.emptySubtitle}>
-              Quando você der match, poderá começar a conversar por aqui.
-            </Text>
-          </View>
-        }
-      />
+          )}
+          contentContainerStyle={[
+            styles.listContent,
+            conversations.length === 0 && styles.emptyListContent,
+          ]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => loadConversations(true)}
+              tintColor={colors.primaryLight}
+              colors={[colors.primary]}
+              accessibilityLabel="Atualizar conversas"
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyState} testID="conversations-empty">
+              <Ionicons
+                name="chatbubbles-outline"
+                size={42}
+                color={colors.textMuted}
+              />
+              <Text style={styles.emptyTitle}>
+                Suas conversas aparecem aqui
+              </Text>
+              <Text style={styles.emptySubtitle}>
+                Quando você der match, poderá começar a conversar por aqui.
+              </Text>
+            </View>
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -124,9 +167,18 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: spacing.xs,
   },
+  loading: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   listContent: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.xxl,
+  },
+  emptyListContent: {
+    flexGrow: 1,
+    justifyContent: "center",
   },
   conversation: {
     flexDirection: "row",
@@ -135,17 +187,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     borderRadius: radius.md,
     backgroundColor: colors.surface,
-  },
-  onlineIndicator: {
-    position: "absolute",
-    right: 1,
-    bottom: 1,
-    width: 14,
-    height: 14,
-    borderRadius: radius.pill,
-    borderWidth: 2,
-    borderColor: colors.surface,
-    backgroundColor: colors.success,
   },
   conversationContent: {
     flex: 1,
@@ -166,36 +207,14 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textMuted,
   },
-  conversationPreview: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: spacing.xs,
-  },
   lastMessage: {
     ...typography.body,
-    flex: 1,
     color: colors.textMuted,
-    marginRight: spacing.sm,
-  },
-  unreadBadge: {
-    minWidth: 20,
-    height: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: spacing.xs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.primary,
-  },
-  unreadCount: {
-    ...typography.caption,
-    color: colors.white,
-    fontWeight: "700",
+    marginTop: spacing.xs,
   },
   emptyState: {
     alignItems: "center",
     paddingHorizontal: spacing.xl,
-    paddingTop: spacing.xxl,
   },
   emptyTitle: {
     ...typography.h3,
