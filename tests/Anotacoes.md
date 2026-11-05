@@ -1,8 +1,8 @@
 # Anotações — Testes
 
 > **Responsável:** Leandro
-> **Status:** ✅ Sprint 2 concluída (30/30) · ✅ Sprint 3 concluída (11/11) · ✅ Sprint 4 concluída (6/6 novos)
-> **Última atualização:** Sprint 4
+> **Status:** ✅ Sprint 2 (30/30) · ✅ Sprint 3 (11/11) · ✅ Sprint 4 (6/6) · ✅ Sprint 5 (14/14 novos)
+> **Última atualização:** Sprint 5
 
 ---
 
@@ -180,6 +180,35 @@ const filtered = applyPreferences(MOCK_PROFILES, prefs, userLocation);
 expect(filtered).toHaveLength(2);
 ```
 
+### 11. `Alert.alert` com múltiplos botões (Sprint 5)
+
+Quando uma tela usa `Alert.alert` com **múltiplos botões** (ex:
+confirmação de Unmatch na tela de Matches), testar o clique no
+botão exige chamar a função `onPress` **de dentro do array do mock**.
+
+Como o `Alert.alert` é mockado globalmente com `jest.spyOn`, o array
+de botões fica acessível em `Alert.alert.mock.calls[X][2]`.
+
+**Exemplo:**
+
+```js
+// 1. Dispara o clique que abre o Alert
+await pressButton("btn-delete");
+
+// 2. Pega o array de opções do Alert
+const options = Alert.alert.mock.calls[0][2];
+
+// 3. Encontra o botão "Confirmar" e executa
+const confirmBtn = options.find((opt) => opt.text === "Confirmar");
+await act(async () => {
+  await confirmBtn.onPress();
+});
+```
+
+**Atenção:** se houver **Alert em cascata** (ex: um Alert pra abrir
+menu e outro pra confirmar), acesse `mock.calls[0]`, `mock.calls[1]`,
+etc. na ordem em que aparecem.
+
 ---
 
 ## 🧪 Estado atual dos testes
@@ -199,17 +228,26 @@ tests/
 │   ├── PhotoVerification.test.js
 │   ├── Settings.test.js
 │   ├── SearchPreferences.test.js
+│   ├── Chat.test.js
+│   ├── Matches.test.js
+│   ├── Matches/
+│   │   └── MatchesActions.test.js      (Sprint 5 / T044)
 │   ├── Discovery.test.js
 │   └── Discovery/
-│       └── applyPreferences.test.js  (Sprint 4 / T035)
+│       ├── applyPreferences.test.js    (Sprint 4 / T035)
+│       └── DiscoveryActions.test.js    (Sprint 5 / T044)
 └── services/
     ├── discovery.test.js
     ├── profilePhotos.test.js
     ├── searchPreferences.test.js
-    └── userLocation.test.js
+    ├── userLocation.test.js
+    ├── interactions.test.js
+    ├── moderation.test.js
+    ├── conversations.test.js
+    └── matchAndBlock.test.js           (Sprint 5 / T044)
 ```
 
-- **Suíte completa (fim da Sprint 4):** 16 suítes, **145 testes**, 100% passando.
+- **Suíte completa (fim da Sprint 5):** 24 suítes, **180 testes**, 100% passando.
 
 ---
 
@@ -228,10 +266,16 @@ tests/
 | `SearchPreferences.test.js` | Filtros de busca (T027). |
 | `Discovery.test.js` | Tela do Discovery (T030/T032). |
 | `applyPreferences.test.js` | **T035:** Filtros puros (`applyPreferences`): idade, gênero, distância. |
+| `DiscoveryActions.test.js` | **T039:** Modal "It's a Match!" (aparece com `match: true`, some ao clicar em continuar). **T036:** Denúncia (sucesso e erro). **T037:** Bloqueio. |
+| `MatchesActions.test.js` | **T041:** Unmatch na lista de conversas (abre confirmação, dispara API, remove da lista, trata erro). |
+| `matchAndBlock.test.js` | **T037/T041:** `unmatch` (DELETE /api/match/:id) e `blockUser` (POST /api/bloquear) com sucesso e validação de ID. |
 | `discovery.test.js` | **T030:** `buildSearchParams`, `normalizeProfile`, `fetchCompatibleProfiles`. |
 | `profilePhotos.test.js` | Service de fotos do perfil. |
 | `searchPreferences.test.js` | `sanitizePreferences`, `load`, `save` (local + backend). |
 | `userLocation.test.js` | Cálculo de distância/Haversine (T028). |
+| `interactions.test.js` | Like (T038). |
+| `moderation.test.js` | Denúncia (T036). |
+| `conversations.test.js` | Busca de conversas (T040). |
 
 ---
 
@@ -252,6 +296,7 @@ npm test -- --coverage                      # relatório de cobertura
 - Novos testes de componente com `Switch` → seguir seção 8.
 - Novos testes de contexto → seguir o padrão do `AuthContext.test.js`.
 - Novos testes de funções puras → seguir seção 10 (sem mocks, sem render).
+- Novos testes com `Alert.alert` múltiplo → seguir seção 11.
 - Novos mocks de módulos nativos → registrar no `moduleNameMapper`.
 - Sempre **Ctrl+S** antes de rodar testes.
 - Nunca rodar `npm audit fix --force` (quebra o Expo).
@@ -281,6 +326,16 @@ npm test -- --coverage                      # relatório de cobertura
 - **Entregue:** 6 testes em `tests/screens/Discovery/applyPreferences.test.js` cobrindo a função pura `applyPreferences` (filtros de idade, gênero e distância).
 - **Descobertas:** 1 peculiaridade nova (seção 10). A suíte completa chegou a 145 testes.
 - **Status:** ⚠️ Parcialmente concluída — filtragem testada, mas **cache e undo pendentes**.
+
+### Sprint 5 — Matches e Moderação
+
+- **Task:** T044 — Testes automatizados de Matches e Moderação.
+- **Entregue:** 14 testes novos em 3 arquivos:
+  - `tests/services/matchAndBlock.test.js` (4 testes) — Unmatch e Bloqueio (T037, T041).
+  - `tests/screens/Discovery/DiscoveryActions.test.js` (6 testes) — Modal "It's a Match!" (T039), Denúncia (T036) e Bloqueio (T037).
+  - `tests/screens/Matches/MatchesActions.test.js` (4 testes) — Fluxo de Unmatch na lista de conversas (T041).
+- **Descobertas:** 1 peculiaridade nova (seção 11 — Alert com múltiplos botões).
+- **Status:** ✅ Concluída — 180 testes no total.
 
 ---
 
