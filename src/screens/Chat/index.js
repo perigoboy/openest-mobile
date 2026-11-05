@@ -7,11 +7,13 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar, Input } from "../../components";
 import { colors, radius, spacing, typography } from "../../styles/theme";
+import { blockUser } from "../../services/block";
 
 const INITIAL_MESSAGES = [
   { id: "4", text: "Também gostei! Foi muito legal te conhecer 😊", time: "14:32", isMine: false },
@@ -84,6 +86,40 @@ export default function Chat({ navigation, route }) {
     setDraft("");
   }
 
+  // T037 — Bloquear usuário a partir da tela de Chat.
+  async function handleBlockUser() {
+    const blockedId = contact.id || contact.username;
+    if (!blockedId) {
+      Alert.alert("Não foi possível identificar o usuário.");
+      return;
+    }
+
+    Alert.alert(
+      "Bloquear usuário",
+      `Tem certeza que deseja bloquear ${contactName}? Após o bloqueio, vocês não aparecerão mais um para o outro.`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Bloquear",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await blockUser(blockedId);
+              Alert.alert("Usuário bloqueado", "A conversa foi encerrada.");
+              navigation?.navigate?.("Matches");
+            } catch (error) {
+              console.error("Erro ao bloquear usuário:", error);
+              Alert.alert(
+                "Não foi possível bloquear",
+                error?.response?.data?.error || "Tente novamente em alguns instantes."
+              );
+            }
+          },
+        },
+      ]
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "left", "right", "bottom"]}>
       <KeyboardAvoidingView
@@ -121,6 +157,7 @@ export default function Chat({ navigation, route }) {
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Mais opções"
+            onPress={handleBlockUser}
           >
             <Ionicons name="ellipsis-vertical" size={21} color={colors.textMuted} />
           </TouchableOpacity>

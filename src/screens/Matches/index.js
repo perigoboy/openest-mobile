@@ -196,15 +196,26 @@ export default function Matches({ navigation }) {
             <View style={styles.emptyState} testID="conversations-empty">
               <Ionicons
                 name="chatbubbles-outline"
-                size={42}
+                size={56}
                 color={colors.textMuted}
               />
               <Text style={styles.emptyTitle}>
-                Suas conversas aparecem aqui
+                Você ainda não tem matches
               </Text>
               <Text style={styles.emptySubtitle}>
-                Quando você der match, poderá começar a conversar por aqui.
+                Curtir perfis no Descobrir é o primeiro passo para começar a
+                conversar por aqui.
               </Text>
+              <TouchableOpacity
+                testID="btn-go-to-discovery"
+                style={styles.emptyCTA}
+                onPress={() => navigation?.navigate?.("Discovery")}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Ir para Descobrir"
+              >
+                <Text style={styles.emptyCTAText}>Descobrir perfis</Text>
+              </TouchableOpacity>
             </View>
           }
         />

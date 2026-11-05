@@ -14,6 +14,7 @@ import {
   ImageBackground,
   StyleSheet,
   TouchableOpacity,
+  Alert,
   useWindowDimensions,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -58,7 +59,7 @@ export function resolveSwipe(translationX, velocityX, threshold) {
   return null;
 }
 
-export default function DiscoveryCard({ profile, style, onSwipe, onReportPress }) {
+export default function DiscoveryCard({ profile, style, onSwipe, onReportPress, onBlockPress }) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const swipeThreshold = Math.round(windowWidth * SWIPE_SCREEN_RATIO);
   const translateX = useSharedValue(0);
@@ -147,10 +148,23 @@ export default function DiscoveryCard({ profile, style, onSwipe, onReportPress }
             onPress={onReportPress}
             activeOpacity={0.75}
             accessibilityRole="button"
-            accessibilityLabel="Opções do perfil"
+            accessibilityLabel="Denunciar perfil"
           >
-            <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+            <Ionicons name="alert-circle" size={22} color="#fff" />
           </TouchableOpacity>
+
+          {onBlockPress ? (
+            <TouchableOpacity
+              testID="btn-block-profile"
+              style={[styles.optionsButton, { backgroundColor: "rgba(231,76,60,0.45)" }]}
+              onPress={onBlockPress}
+              activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityLabel="Bloquear usuário"
+            >
+              <Ionicons name="ban" size={22} color="#fff" />
+            </TouchableOpacity>
+          ) : null}
 
           {profile.kindLabel ? (
             <BlurView intensity={30} tint="light" style={styles.badge}>
