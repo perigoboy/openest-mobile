@@ -8,7 +8,14 @@
 // threshold (ou com um flick rápido), aciona o MESMO callback de ação dos
 // botões Like/Pass da Discovery via `onSwipe(direction)`.
 import React, { useEffect } from "react";
-import { View, Text, ImageBackground, StyleSheet, useWindowDimensions } from "react-native";
+import {
+  View,
+  Text,
+  ImageBackground,
+  StyleSheet,
+  TouchableOpacity,
+  useWindowDimensions,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   interpolate,
@@ -51,7 +58,7 @@ export function resolveSwipe(translationX, velocityX, threshold) {
   return null;
 }
 
-export default function DiscoveryCard({ profile, style, onSwipe }) {
+export default function DiscoveryCard({ profile, style, onSwipe, onReportPress }) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const swipeThreshold = Math.round(windowWidth * SWIPE_SCREEN_RATIO);
   const translateX = useSharedValue(0);
@@ -134,6 +141,17 @@ export default function DiscoveryCard({ profile, style, onSwipe }) {
           resizeMode="cover"
           style={styles.fill}
         >
+          <TouchableOpacity
+            testID="btn-report-profile"
+            style={styles.optionsButton}
+            onPress={onReportPress}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel="Opções do perfil"
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+          </TouchableOpacity>
+
           {profile.kindLabel ? (
             <BlurView intensity={30} tint="light" style={styles.badge}>
               <Ionicons name="people" size={16} color="#6D1BC7" />
@@ -190,6 +208,18 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.65)",
   },
   badgeText: { fontSize: 13, fontWeight: "700", color: "#6D1BC7" },
+  optionsButton: {
+    position: "absolute",
+    top: 16,
+    right: 16,
+    zIndex: 2,
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 20,
+    backgroundColor: "rgba(13,13,15,0.48)",
+  },
   shade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 220 },
   footer: { position: "absolute", left: 18, right: 18, bottom: 18 },
   name: { fontSize: 28, fontWeight: "800", color: "#fff" },
