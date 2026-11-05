@@ -9,6 +9,7 @@ import Discovery, { applyPreferences } from '../../src/screens/Discovery';
 import { MOCK_PROFILES } from '../../src/screens/Discovery/mockProfiles';
 import { fetchCompatibleProfiles } from '../../src/services/discovery';
 import { likeProfile } from '../../src/services/interactions';
+import { submitReport } from '../../src/services/moderation';
 import { DiscoveryCard } from '../../src/components';
 
 jest.mock('../../src/services/searchPreferences', () => {
@@ -30,6 +31,19 @@ jest.mock('../../src/services/discovery', () => {
     })),
   };
 });
+
+jest.mock('../../src/services/moderation', () => ({
+  REPORT_REASONS: [
+    'Bullying ou perfil inadequado',
+    'Suicídio, automutilação ou distúrbios alimentares',
+    'Violência, ódio ou exploração',
+    'Venda ou promoção de itens proibidos',
+    'Nudez ou atividade sexual',
+    'Golpe, fraude ou spam',
+    'Informação falsa',
+  ],
+  submitReport: jest.fn(),
+}));
 
 jest.mock('../../src/services/interactions', () => ({
   likeProfile: jest.fn(),
@@ -60,6 +74,10 @@ beforeEach(() => {
 });
 
 describe('Discovery — redesign liquid glass', () => {
+  beforeEach(() => {
+    submitReport.mockReset();
+  });
+
   it('busca os perfis compatíveis na API na montagem (T030)', async () => {
     await renderDiscovery();
     expect(fetchCompatibleProfiles).toHaveBeenCalledTimes(1);
@@ -184,5 +202,56 @@ describe('Discovery — redesign liquid glass', () => {
 
     await act(async () => props.onSwipe('pass'));
     expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Julia Maria');
+  });
+
+  it('submits a report and hides the reported profile only after success (T036)', async () => {
+    submitReport.mockResolvedValue({ message: 'Denúncia enviada com sucesso.' });
+    await renderDiscovery();
+
+    fireEvent.press(screen.getByTestId('btn-report-profile'));
+    fireEvent.press(screen.getByTestId('report-reason-0'));
+    fireEvent.press(screen.getByTestId('submit-report'));
+
+    expect(submitReport).toHaveBeenCalledWith(
+      MOCK_PROFILES[0].id,
+      'Bullying ou perfil inadequado',
+      ''
+    );
+    expect(await screen.findByText(/Juliana Ferraz/)).toBeTruthy();
+  });
+
+  it('keeps the profile visible when the report request fails', async () => {
+    submitReport.mockRejectedValue(new Error('Network unavailable'));
+    await renderDiscovery();
+
+    fireEvent.press(screen.getByTestId('btn-report-profile'));
+    fireEvent.press(screen.getByTestId('report-reason-0'));
+    fireEvent.press(screen.getByTestId('submit-report'));
+
+    expect(await screen.findByTestId('discovery-name')).toBeTruthy();
+    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain(
+      'Julio e Talita'
+    );
+  });
+
+  it('does not bring a previously viewed profile back when the last one is reported', async () => {
+    submitReport.mockResolvedValue({ message: 'Denúncia enviada com sucesso.' });
+    await renderDiscovery();
+
+    await act(async () => {
+      const cardProps = DiscoveryCard.mock.calls[DiscoveryCard.mock.calls.length - 1][0];
+      cardProps.onSwipe('pass');
+      cardProps.onSwipe('pass');
+      cardProps.onSwipe('pass');
+    });
+    expect(screen.getByTestId('discovery-name').props.children.join('')).toContain(
+      'Sofia Espanha'
+    );
+
+    fireEvent.press(screen.getByTestId('btn-report-profile'));
+    fireEvent.press(screen.getByTestId('report-reason-0'));
+    fireEvent.press(screen.getByTestId('submit-report'));
+
+    expect(await screen.findByText('Você viu todo mundo')).toBeTruthy();
   });
 });

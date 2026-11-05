@@ -2,7 +2,18 @@
 // o baralho vem de GET /api/users/buscar (serviço src/services/discovery.js),
 // que já respeita os filtros do backend e exclui perfis já interagidos.
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -13,6 +24,8 @@ import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPrefe
 import { avatarFallback, fetchCompatibleProfiles } from "../../services/discovery";
 import { likeProfile } from "../../services/interactions";
 import { distanceKm } from "../../services/userLocation";
+import { REPORT_REASONS, submitReport } from "../../services/moderation";
+import { colors, radius, spacing, typography } from "../../styles/theme";
 
 function distanceToKm(profile, userLocation) {
   if (profile?.latitude != null && profile?.longitude != null && userLocation) {
@@ -53,6 +66,11 @@ export default function Discovery({ navigation }) {
   const { user } = useAuth();
   const [index, setIndex] = useState(0);
   const [prefs, setPrefs] = useState(DEFAULT_PREFERENCES);
+  const [reportTarget, setReportTarget] = useState(null);
+  const [reportReason, setReportReason] = useState(null);
+  const [reportDescription, setReportDescription] = useState("");
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const hiddenProfileIds = useRef(new Set());
   // T030 — baralho vindo da API (Discovery Engine). O backend já aplica os
   // filtros de idade/status/interesses e exclui perfis já interagidos.
   const [deck, setDeck] = useState([]);
@@ -60,17 +78,20 @@ export default function Discovery({ navigation }) {
   const [liking, setLiking] = useState(false);
   const [matchProfile, setMatchProfile] = useState(null);
   const isLiking = useRef(false);
-  const profile = deck[index] || null;
   const userPhoto = Array.isArray(user?.photos)
     ? user.photos.find((photo) => typeof photo === "string" && photo.startsWith("http"))
     : null;
+  const visibleDeck = deck.filter(
+    (item) => !hiddenProfileIds.current.has(item.id)
+  );
+  const profile = visibleDeck[index] || null;
 
   // Busca os perfis compatíveis na API e reseta o baralho para o 1º card.
   const loadProfiles = useCallback(async (currentPrefs) => {
     setLoading(true);
     try {
       const { profiles } = await fetchCompatibleProfiles(currentPrefs);
-      setDeck(profiles);
+      setDeck(profiles.filter((item) => !hiddenProfileIds.current.has(item.id)));
       setIndex(0);
     } catch (error) {
       console.error("Erro ao buscar perfis compatíveis:", error?.response?.status, error?.response?.data || error?.message);
@@ -171,6 +192,55 @@ export default function Discovery({ navigation }) {
     dismissMatch();
   }
 
+  function openReportModal(targetProfile) {
+    setReportTarget(targetProfile);
+    setReportReason(null);
+    setReportDescription("");
+  }
+
+  function closeReportModal() {
+    if (submittingReport) return;
+    setReportTarget(null);
+    setReportReason(null);
+    setReportDescription("");
+  }
+
+  async function handleSubmitReport() {
+    if (!reportTarget || !reportReason || submittingReport) return;
+
+    setSubmittingReport(true);
+    try {
+      await submitReport(
+        reportTarget.id,
+        reportReason,
+        reportDescription.trim()
+      );
+
+      hiddenProfileIds.current.add(reportTarget.id);
+      setDeck((currentDeck) => [...currentDeck]);
+      setReportTarget(null);
+      setReportReason(null);
+      setReportDescription("");
+      Alert.alert(
+        "Denúncia enviada",
+        "Obrigado por nos avisar. Este perfil não será mais exibido para você."
+      );
+    } catch (error) {
+      console.error(
+        "Erro ao enviar denúncia:",
+        error?.response?.status,
+        error?.response?.data || error?.message
+      );
+      Alert.alert(
+        "Não foi possível denunciar",
+        error?.response?.data?.error ||
+          "Tente novamente em alguns instantes."
+      );
+    } finally {
+      setSubmittingReport(false);
+    }
+  }
+
   return (
     <LinearGradient colors={["#3D0A7A", "#8B3BD6", "#E3BFFF", "#F9F1FF"]} locations={[0, 0.4, 0.75, 1]} style={styles.bg}>
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
@@ -202,11 +272,15 @@ export default function Discovery({ navigation }) {
             // skeleton + estado vazio com recarregar).
             <Loader />
           ) : profile ? (
-            <DiscoveryCard profile={profile} onSwipe={handleCardSwipe} />
+            <DiscoveryCard
+              profile={profile}
+              onSwipe={handleCardSwipe}
+              onReportPress={() => openReportModal(profile)}
+            />
           ) : (
             <BlurView intensity={40} tint="light" style={styles.empty}>
               <Text style={styles.emptyTitle}>
-                {deck.length === 0 ? "Nenhum perfil nos filtros atuais" : "VocÃª viu todo mundo"}
+                {deck.length === 0 ? "Nenhum perfil nos filtros atuais" : "Você viu todo mundo"}
               </Text>
               <Text style={styles.emptySubtitle}>
                 {deck.length === 0
@@ -242,6 +316,108 @@ export default function Discovery({ navigation }) {
             </TouchableOpacity>
           </BlurView>
         </View>
+        <Modal
+          visible={Boolean(reportTarget)}
+          transparent
+          animationType="slide"
+          onRequestClose={closeReportModal}
+        >
+          <View style={styles.reportOverlay}>
+            <TouchableOpacity
+              style={StyleSheet.absoluteFill}
+              activeOpacity={1}
+              onPress={closeReportModal}
+              accessibilityLabel="Fechar denúncia"
+              accessibilityRole="button"
+            />
+            <View style={styles.reportSheet}>
+              <View style={styles.reportHandle} />
+              <Text style={styles.reportTitle}>
+                Denunciar {reportTarget?.name}
+              </Text>
+              <Text style={styles.reportSubtitle}>
+                Selecione o motivo que melhor descreve o problema.
+              </Text>
+              <ScrollView
+                style={styles.reportReasons}
+                keyboardShouldPersistTaps="handled"
+              >
+                {REPORT_REASONS.map((reason) => {
+                  const selected = reportReason === reason;
+                  return (
+                    <TouchableOpacity
+                      key={reason}
+                      testID={`report-reason-${REPORT_REASONS.indexOf(reason)}`}
+                      style={[
+                        styles.reportReason,
+                        selected && styles.reportReasonSelected,
+                      ]}
+                      onPress={() => setReportReason(reason)}
+                      activeOpacity={0.75}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                    >
+                      <Text
+                        style={[
+                          styles.reportReasonText,
+                          selected && styles.reportReasonTextSelected,
+                        ]}
+                      >
+                        {reason}
+                      </Text>
+                      <Ionicons
+                        name={selected ? "radio-button-on" : "radio-button-off"}
+                        size={20}
+                        color={selected ? colors.primary : colors.textMuted}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              <TextInput
+                testID="report-description"
+                style={styles.reportDescription}
+                placeholder="Detalhes adicionais (opcional)"
+                placeholderTextColor={colors.textMuted}
+                value={reportDescription}
+                onChangeText={setReportDescription}
+                multiline
+                maxLength={1000}
+                textAlignVertical="top"
+                editable={!submittingReport}
+                accessibilityLabel="Detalhes adicionais da denúncia"
+              />
+              <View style={styles.reportActions}>
+                <TouchableOpacity
+                  style={styles.reportCancel}
+                  onPress={closeReportModal}
+                  disabled={submittingReport}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.reportCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="submit-report"
+                  style={[
+                    styles.reportSubmit,
+                    (!reportReason || submittingReport) &&
+                      styles.reportSubmitDisabled,
+                  ]}
+                  onPress={handleSubmitReport}
+                  disabled={!reportReason || submittingReport}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                >
+                  {submittingReport ? (
+                    <ActivityIndicator color={colors.white} />
+                  ) : (
+                    <Text style={styles.reportSubmitText}>Enviar denúncia</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
       <Modal
         visible={Boolean(matchProfile)}
@@ -332,4 +508,109 @@ const styles = StyleSheet.create({
   matchChatText: { color: "#fff", fontSize: 15, fontWeight: "800" },
   matchContinueButton: { paddingVertical: 14 },
   matchContinueText: { color: "#6D1BC7", fontSize: 14, fontWeight: "700" },
+  reportOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  reportSheet: {
+    maxHeight: "88%",
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: colors.surface,
+  },
+  reportHandle: {
+    width: 40,
+    height: 4,
+    alignSelf: "center",
+    marginBottom: spacing.md,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+  },
+  reportTitle: {
+    ...typography.h2,
+    color: colors.text,
+  },
+  reportSubtitle: {
+    ...typography.body,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  reportReasons: {
+    flexGrow: 0,
+  },
+  reportReason: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.background,
+  },
+  reportReasonSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.surfaceAlt,
+  },
+  reportReasonText: {
+    ...typography.body,
+    flex: 1,
+    color: colors.text,
+    marginRight: spacing.sm,
+  },
+  reportReasonTextSelected: {
+    color: colors.primaryLight,
+  },
+  reportDescription: {
+    minHeight: 72,
+    maxHeight: 112,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.background,
+    color: colors.text,
+    ...typography.body,
+  },
+  reportActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    columnGap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  reportCancel: {
+    minHeight: 48,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+  },
+  reportCancelText: {
+    ...typography.body,
+    color: colors.textMuted,
+    fontWeight: "600",
+  },
+  reportSubmit: {
+    minHeight: 48,
+    minWidth: 148,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.danger,
+  },
+  reportSubmitDisabled: {
+    opacity: 0.5,
+  },
+  reportSubmitText: {
+    ...typography.body,
+    color: colors.white,
+    fontWeight: "700",
+  },
 });
