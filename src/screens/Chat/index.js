@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -7,13 +7,14 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar, Input } from "../../components";
 import { colors, radius, spacing, typography } from "../../styles/theme";
 import { blockUser } from "../../services/block";
+import { emitTyping, onTyping, getSocketStatus } from "../../services/socket";
 
 const INITIAL_MESSAGES = [
   { id: "4", text: "Também gostei! Foi muito legal te conhecer 😊", time: "14:32", isMine: false },
@@ -59,7 +60,42 @@ export default function Chat({ navigation, route }) {
   const contactPhoto = contact.avatar || contact.photo;
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [draft, setDraft] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
   const nextMessageId = useRef(0);
+
+  useEffect(() => {
+    const handleKeyPress = () => {
+      emitTyping(true, contact.id || "");
+    };
+
+    const textArea = document.querySelector("textarea");
+    if (textArea) {
+      textArea.addEventListener("input", handleKeyPress);
+    }
+
+    return () => {
+      if (textArea) {
+        textArea.removeEventListener("input", handleKeyPress);
+      }
+    };
+  }, [contact.id]);
+
+  useEffect(() => {
+    // T046 — Escutar evento de "digitando" do outro usuário
+    const unsubscribeTyping = onTyping((data) => {
+      setIsTyping(data.isTyping);
+    });
+
+    // T046 — Verificar status online/offline
+    const status = getSocketStatus();
+    setIsOnline(status.connected);
+
+    // Cleanup on unmount
+    return () => {
+      unsubscribeTyping();
+    };
+  }, [contact.id]);
 
   function goBack() {
     navigation?.navigate?.("Matches");
@@ -73,6 +109,9 @@ export default function Chat({ navigation, route }) {
       hour: "2-digit",
       minute: "2-digit",
     });
+
+    // T046 — Emitir evento de typing quando usuário enviar mensagem
+    emitTyping(false, contact.id || "");
 
     setMessages((currentMessages) => [
       {
