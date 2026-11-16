@@ -12,6 +12,7 @@ import Discovery from "../screens/Discovery";
 import SearchPreferences from "../screens/SearchPreferences";
 import Matches from "../screens/Matches";
 import Chat from "../screens/Chat";
+import Encontros from "../screens/Encontros";
 import Profile from "../screens/Profile";
 import Settings from "../screens/Settings"; // T025: tela real da configuração
 import PhotoVerification from "../screens/PhotoVerification"; // T023: fluxo de selfie
@@ -21,6 +22,7 @@ const Tab = createBottomTabNavigator();
 const ICONS = {
   Discovery: "flame",
   Matches: "chatbubbles",
+  Encontros: "heart",
   Chat: "chatbox-ellipses",
   Profile: "person-circle",
   Settings: "settings",
@@ -29,7 +31,7 @@ const ICONS = {
 // Só estes 4 aparecem na barra — Chat, SearchPreferences e
 // PhotoVerification continuam registrados (deep-link/navegação interna),
 // mas sem botão.
-const VISIBLE_TABS = ["Discovery", "Matches", "Profile", "Settings"];
+const VISIBLE_TABS = ["Discovery", "Matches", "Encontros", "Profile", "Settings"];
 const FULLSCREEN_ROUTES = ["Chat", "SearchPreferences", "PhotoVerification"];
 
 function GlassTabBar({ state, navigation }) {
@@ -92,6 +94,7 @@ export default function AppRoutes() {
         component={Chat}
         options={{ tabBarButton: () => null, tabBarStyle: { display: "none" } }}
       />
+      <Tab.Screen name="Encontros" component={Encontros} options={{ title: "Encontros" }} />
       <Tab.Screen name="Profile" component={Profile} options={{ title: "Perfil" }} />
       <Tab.Screen name="Settings" component={Settings} options={{ title: "Configurações" }} />
       {/*
