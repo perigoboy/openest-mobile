@@ -1,0 +1,39 @@
+// src/services/socket
+// T046 — Eventos de typing e status online via socket.io
+
+import { io } from "socket.io-client";
+
+// Conecta ao socket usando a URL do backend (mesma do axios)
+const socket = io(process.env.EXPO_PUBLIC_API_URL || "http://localhost:3333", {
+  transports: ["websocket"],
+  extraHeaders: {
+    authorization: `Bearer ${localStorage.getItem("user_token") || ""}`
+  }
+});
+
+// T046 — Emitir evento "typing" quando o usuário estiver digitando
+export function emitTyping(isTyping: boolean, contactId: string) {
+  if (socket.connected) {
+    socket.emit("typing", { isTyping, contactId });
+  }
+}
+
+// T046 — Escutar evento "typing" do outro usuário
+export function onTyping(callback: (data: { isTyping: boolean; userId: string }) => void) {
+  if (socket.connected) {
+    socket.on("typing", callback);
+    // Retorna função para remover o listener
+    return () => socket.off("typing", callback);
+  }
+  return () => {};
+}
+
+// T046 — Verificar se o socket está conectado
+export function getSocketStatus() {
+  return {
+    connected: socket.connected,
+    connectionStatus: socket.connected ? "online" : "offline"
+  };
+}
+
+export default socket;
