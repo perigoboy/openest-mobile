@@ -53,6 +53,7 @@ export default function Onboarding({ navigation }) {
         {step === 1 && (
           <>
             <TextInput
+              accessibilityLabel="Link da foto principal"
               style={styles.input}
               placeholder="Link da sua foto principal (URL)"
               placeholderTextColor="#888"
@@ -61,6 +62,7 @@ export default function Onboarding({ navigation }) {
               autoCapitalize="none"
             />
             <TextInput
+              accessibilityLabel="Bio"
               style={[styles.input, styles.textArea]}
               placeholder="Escreva uma bio mínima sobre você..."
               placeholderTextColor="#888"
@@ -96,7 +98,7 @@ export default function Onboarding({ navigation }) {
       </View>
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.button} onPress={handleNextStep}>
+        <TouchableOpacity accessibilityRole="button" style={styles.button} onPress={handleNextStep}>
           <Text style={styles.buttonText}>
             {step === 3 ? 'Acessar o Discovery' : 'Avançar'}
           </Text>

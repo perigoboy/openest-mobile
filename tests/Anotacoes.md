@@ -1,7 +1,7 @@
 # Anotações — Testes
 
 > **Responsável:** Leandro
-> **Status:** ✅ Sprint 2 (30/30) · ✅ Sprint 3 (11/11) · ✅ Sprint 4 (6/6) · ✅ Sprint 5 (14/14 novos)
+> **Status:** ✅ Sprint 2 (30/30) · ✅ Sprint 3 (11/11) · ✅ Sprint 4 (6/6) · ✅ Sprint 5 (14/14 novos) · ✅ T045–T052 (tempo real, push, deep link, rede, splash, acessibilidade)
 > **Última atualização:** Sprint 5
 
 ---
@@ -343,3 +343,73 @@ npm test -- --coverage                      # relatório de cobertura
 
 - **T019 (edição de perfil):** `handleSave` no `Profile` é stub (só Alert). Teste cobre o comportamento atual.
 - **T033 (cache de vistos) e T034 (undo):** **NÃO FORAM IMPLEMENTADAS**. O `Discovery/index.js` não possui lógica de histórico nem botão "Desfazer". Os testes dessas features, pedidos na T035, **ficam bloqueados** até que o código seja entregue. Sinalizado ao time.
+
+---
+
+## 🆕 T045–T052 — Tempo real, push, deep link, rede offline, polimento e acessibilidade
+
+### Peculiaridades novas (seções 12 a 16)
+
+### 12. `console.error` silenciado esconde erros de render
+
+O `jest.setup.js` troca o `console.error` por `jest.fn()`. Quando um componente
+quebra no render, o teste só mostra "Unable to find node on an unmounted
+component". **Para ver o erro real**, envolva o render num Error Boundary
+temporário que imprime `error.message` com `process.stdout.write`.
+
+### 13. Navegador real no Jest precisa dos contextos do safe-area
+
+`tests/mocks/react-native-safe-area-context.js` agora exporta
+`SafeAreaInsetsContext` e `SafeAreaFrameContext`. Sem eles, renderizar um
+`createBottomTabNavigator` de verdade quebra com
+"Cannot read properties of undefined (reading 'Consumer')".
+
+### 14. Mock de módulo cujo valor muda entre testes (ex.: `expo-device`)
+
+`import * as Device` vira uma CÓPIA do objeto mockado (interop do Babel), então
+`Device.isDevice = false` depois do import não tem efeito. Use `__esModule: true`
+e um getter lendo um estado mutável (ver `tests/services/notifications.test.js`).
+
+### 15. Código que roda no carregamento do módulo
+
+`App.js` chama `SplashScreen.preventAutoHideAsync()` ao ser importado — antes do
+`beforeEach(jest.clearAllMocks)`. Guarde o número de chamadas no topo do arquivo
+de teste (ver `tests/App.test.js`).
+
+### 16. Rejeições esperadas: anexe o `expect(...).rejects` ANTES de disparar
+
+Se a Promise rejeita dentro de um `act()` antes do `expect(...).rejects`, o Jest
+acusa rejeição não tratada. Faça `const assertion = expect(p).rejects...`,
+dispare o clique e depois `await assertion`.
+
+### Testes adicionados
+
+| Arquivo | O que cobre |
+|---|---|
+| `hooks/useChat.test.js` | **T045:** histórico, entrar/reentrar na sala, recebimento, eco sem duplicar, fallback REST, falha + reenvio, troca de conversa sem misturar mensagens · **T046:** "digitando…" (início, parada por inatividade/envio, expiração) |
+| `utils/chatMessages.test.js` | **T045:** funções puras de merge/dedupe da lista do chat |
+| `services/socket.test.js` · `services/messages.test.js` | **T045:** conexão com JWT, singleton, ack com timeout, rotas REST |
+| `screens/Chat.test.js` | **T043/T045/T049:** estados (carregando, vazio, erro), envio, reenvio, contato via deep link e via modal de match |
+| `services/notifications.test.js` · `contexts/RealtimeContext.test.js` | **T048:** permissão, token, registro na API, preferência das Configurações, notificação local, sem duplicar com push remoto |
+| `routes/linking.test.js` · `App.test.js` | **T049:** URL a partir da notificação + navegação REAL (app aberto e cold start) |
+| `services/networkErrors.test.js` · `components/NetworkErrorBanner.test.js` | **T050:** classificação, fila, "Tentar novamente" com axios real |
+| `routes/Routes.test.js` · `config/appConfig.test.js` | **T051:** splash só some após ler a sessão; app.json, ícones (tamanho, transparência, área segura) |
+| `accessibility/*.test.js` · `responsiveness/screens.test.js` | **T052:** contraste WCAG AA, nomes acessíveis, telas 320×568 → 800×1280 |
+
+No backend (`openest-api`): `npm test` roda `test/unit/` com o `node:test` nativo —
+inclui uma integração **real** de Socket.IO (2 clientes trocando mensagens).
+
+- **Suíte completa (após T045–T052):** 39 suítes / 409 testes no mobile + 30 testes no backend, 100% passando.
+
+### ✅ Checklist manual da T052 (aparelho/emulador — não dá para automatizar)
+
+Testar em **um Android pequeno** (ex.: emulador "Small Phone", 320–360dp de largura)
+e **um grande** (ex.: Pixel 7 Pro / tablet):
+
+- [ ] Login, Cadastro, Descoberta, Conversas, Chat, Perfil e Configurações sem textos cortados ou sobrepostos.
+- [ ] Teclado aberto no Chat não cobre o campo de mensagem.
+- [ ] Tab bar flutuante não cobre o último item das listas.
+- [ ] Fonte do sistema em **"Maior"** (Configurações → Tela → Tamanho da fonte): nada estoura.
+- [ ] **TalkBack** ligado: todos os botões são anunciados em português (ex.: "Conversas, guia", "Enviar mensagem, botão").
+- [ ] Modo avião: aparece o aviso "Sem conexão…" com **Tentar novamente**; ao voltar a internet e tocar, a tela carrega.
+- [ ] Ícone do app, ícone temático (Android 13+) e splash com a identidade do Openest.

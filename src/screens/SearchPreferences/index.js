@@ -9,17 +9,19 @@ import { Ionicons } from "@expo/vector-icons";
 import { searchStyles as styles } from "./styles";
 import { DEFAULT_PREFERENCES, GENDER_OPTIONS, loadPreferences, savePreferences } from "../../services/searchPreferences";
 
-function Stepper({ testID, value, min, max, step = 1, suffix = "", onChange }) {
+// T052 — `label` é o nome lido pelo leitor de tela (ex.: "idade mínima").
+function Stepper({ testID, label, value, min, max, step = 1, suffix = "", onChange }) {
+  const name = label || testID;
   function bump(delta) {
     onChange(Math.min(max, Math.max(min, value + delta * step)));
   }
   return (
     <View style={styles.stepper}>
-      <TouchableOpacity testID={`${testID}-minus`} style={styles.stepBtn} onPress={() => bump(-1)} accessibilityRole="button" accessibilityLabel={`Diminuir ${testID}`}>
+      <TouchableOpacity testID={`${testID}-minus`} style={styles.stepBtn} onPress={() => bump(-1)} accessibilityRole="button" accessibilityLabel={`Diminuir ${name}`} accessibilityState={{ disabled: value <= min }}>
         <Ionicons name="remove" size={20} color="#6D1BC7" />
       </TouchableOpacity>
-      <Text testID={testID} style={styles.stepValue}>{value}{suffix}</Text>
-      <TouchableOpacity testID={`${testID}-plus`} style={styles.stepBtn} onPress={() => bump(1)} accessibilityRole="button" accessibilityLabel={`Aumentar ${testID}`}>
+      <Text testID={testID} style={styles.stepValue} accessibilityLabel={`${name}: ${value}${suffix}`}>{value}{suffix}</Text>
+      <TouchableOpacity testID={`${testID}-plus`} style={styles.stepBtn} onPress={() => bump(1)} accessibilityRole="button" accessibilityLabel={`Aumentar ${name}`} accessibilityState={{ disabled: value >= max }}>
         <Ionicons name="add" size={20} color="#6D1BC7" />
       </TouchableOpacity>
     </View>
@@ -73,15 +75,15 @@ export default function SearchPreferences({ navigation, route }) {
             <View style={styles.row}>
               <View style={styles.half}>
                 <Text style={styles.label}>Idade mínima</Text>
-                <Stepper testID="min-age" value={prefs.minAge} min={18} max={99} onChange={(v) => set("minAge", v)} />
+                <Stepper testID="min-age" label="idade mínima" value={prefs.minAge} min={18} max={99} onChange={(v) => set("minAge", v)} />
               </View>
               <View style={styles.half}>
                 <Text style={styles.label}>Idade máxima</Text>
-                <Stepper testID="max-age" value={prefs.maxAge} min={18} max={99} onChange={(v) => set("maxAge", v)} />
+                <Stepper testID="max-age" label="idade máxima" value={prefs.maxAge} min={18} max={99} onChange={(v) => set("maxAge", v)} />
               </View>
             </View>
             <Text style={styles.section}>Distância máxima</Text>
-            <Stepper testID="max-distance" value={prefs.maxDistanceKm} min={1} max={500} suffix=" km" onChange={(v) => set("maxDistanceKm", v)} />
+            <Stepper testID="max-distance" label="distância máxima" value={prefs.maxDistanceKm} min={1} max={500} suffix=" km" onChange={(v) => set("maxDistanceKm", v)} />
             <Text style={styles.section}>Mostrar</Text>
             <View style={styles.chips}>
               {GENDER_OPTIONS.map((opt) => {

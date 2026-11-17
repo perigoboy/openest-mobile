@@ -31,6 +31,7 @@ export default function PhotoGallery({
             )}
 
             <TouchableOpacity
+              accessibilityRole="button"
               testID={`btn-remove-photo-${index}`}
               style={styles.removeBadge}
               onPress={() => onRemove && onRemove(index)}
@@ -42,6 +43,7 @@ export default function PhotoGallery({
 
             <View style={styles.tileActions}>
               <TouchableOpacity
+                accessibilityRole="button"
                 testID={`btn-move-left-${index}`}
                 style={[styles.actionButton, (disabled || index === 0) && styles.actionButtonDisabled]}
                 onPress={() => onMove && onMove(index, index - 1)}
@@ -52,6 +54,7 @@ export default function PhotoGallery({
               </TouchableOpacity>
 
               <TouchableOpacity
+                accessibilityRole="button"
                 testID={`btn-set-main-${index}`}
                 style={[styles.actionButton, (disabled || index === 0) && styles.actionButtonDisabled]}
                 onPress={() => onSetMain && onSetMain(index)}
@@ -62,6 +65,7 @@ export default function PhotoGallery({
               </TouchableOpacity>
 
               <TouchableOpacity
+                accessibilityRole="button"
                 testID={`btn-move-right-${index}`}
                 style={[
                   styles.actionButton,
@@ -81,6 +85,7 @@ export default function PhotoGallery({
       {/* Adicionar — só enquanto a galeria não atingir o limite N (T021) */}
       {photos.length < MAX_PROFILE_PHOTOS && (
         <TouchableOpacity
+          accessibilityRole="button"
           testID="btn-add-photo"
           style={styles.addTile}
           onPress={onAdd}

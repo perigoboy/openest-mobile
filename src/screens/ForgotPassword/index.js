@@ -66,6 +66,7 @@ export default function ForgotPassword({ navigation }) {
 
               <View style={styles.formContainer}>
                 <TextInput
+                  accessibilityLabel="E-mail"
                   style={styles.input}
                   placeholder="E-mail"
                   placeholderTextColor="rgba(255,255,255,0.6)"
@@ -77,6 +78,7 @@ export default function ForgotPassword({ navigation }) {
                 />
 
                 <TouchableOpacity
+                  accessibilityRole="button"
                   style={[styles.button, submitting && styles.buttonDisabled]}
                   onPress={handleSubmit}
                   disabled={submitting}
@@ -85,6 +87,7 @@ export default function ForgotPassword({ navigation }) {
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  accessibilityRole="button"
                   style={styles.backLink}
                   onPress={() => navigation.navigate('Login')}
                 >

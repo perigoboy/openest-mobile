@@ -15,6 +15,10 @@ export default function Input({
       {label && <Text style={styles.label}>{label}</Text>}
 
       <TextInput
+        // T052 — sem rótulo explícito, o leitor de tela usa o label visível
+        // (ou o placeholder) para anunciar o campo.
+        accessibilityLabel={label || textInputProps.placeholder}
+        accessibilityHint={error || undefined}
         placeholderTextColor={colors.textMuted}
         style={[
           styles.input,
