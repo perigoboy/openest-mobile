@@ -49,6 +49,12 @@ jest.mock('expo-file-system', () => {
   return { File, Paths: { cache: 'file:///cache' } };
 });
 
+// T048 — o Switch de notificações registra/remove o push token.
+const mockSetNotificationsEnabled = jest.fn().mockResolvedValue(null);
+jest.mock('../../src/services/notifications', () => ({
+  setNotificationsEnabledAsync: (...args) => mockSetNotificationsEnabled(...args),
+}));
+
 jest.mock('expo-sharing', () => ({
   isAvailableAsync: (...args) => mockIsAvailableAsync(...args),
   shareAsync: (...args) => mockShareAsync(...args),
@@ -154,6 +160,33 @@ describe('Settings — notificações', () => {
     await waitFor(() => {
       expect(screen.getByTestId('switch-notifications').props.value).toBe(false);
     });
+  });
+
+  it('T048: desligar remove a inscrição de push e religar inscreve de novo', async () => {
+    renderSettings();
+
+    await act(async () => {
+      fireEvent(screen.getByTestId('switch-notifications'), 'valueChange', false);
+    });
+    expect(mockSetNotificationsEnabled).toHaveBeenLastCalledWith(false);
+
+    await act(async () => {
+      fireEvent(screen.getByTestId('switch-notifications'), 'valueChange', true);
+    });
+    expect(mockSetNotificationsEnabled).toHaveBeenLastCalledWith(true);
+  });
+
+  it('T048: salva a preferência ANTES de mexer no push (o push lê essa preferência)', async () => {
+    const order = [];
+    SecureStore.setItemAsync.mockImplementationOnce(async () => order.push('pref'));
+    mockSetNotificationsEnabled.mockImplementationOnce(async () => order.push('push'));
+    renderSettings();
+
+    await act(async () => {
+      fireEvent(screen.getByTestId('switch-notifications'), 'valueChange', true);
+    });
+
+    expect(order).toEqual(['pref', 'push']);
   });
 });
 

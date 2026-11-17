@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import api from '../services/api';
+import { unregisterPushNotificationsAsync } from '../services/notifications';
 
 const AuthContext = createContext({});
 
@@ -119,6 +120,9 @@ export function AuthProvider({ children }) {
   // Função de Logout
   async function signOut() {
     try {
+      // T048 — este aparelho para de receber push da conta. Precisa vir ANTES
+      // de apagar o token, pois a rota é autenticada. Nunca lança.
+      await unregisterPushNotificationsAsync();
       await SecureStore.deleteItemAsync('user_token');
       await SecureStore.deleteItemAsync('user_data');
       setUser(null);
