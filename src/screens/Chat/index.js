@@ -1,134 +1,200 @@
-import React, { useRef, useState, useEffect } from "react";
+// T043 — UI do chat · T045 — mensagens em tempo real (Socket.IO)
+// T046 — indicador de "digitando…" (eventos typing_start/typing_stop do backend)
+// T049 — também é aberto por Deep Link a partir de uma notificação
+// (openest://chat/<conversationId>), recebendo só o id da conversa.
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar, Input } from "../../components";
 import { colors, radius, spacing, typography } from "../../styles/theme";
 import { blockUser } from "../../services/block";
-import { emitTyping, onTyping, getSocketStatus } from "../../services/socket";
+import { findConversationContact, findConversationWithUser } from "../../services/conversations";
+import {
+  clearActiveConversation,
+  setActiveConversation,
+} from "../../services/activeConversation";
+import { useAuth } from "../../contexts/AuthContext";
+import { useChat } from "../../hooks/useChat";
+import { MESSAGE_STATUS } from "../../utils/chatMessages";
 
-const INITIAL_MESSAGES = [
-  { id: "4", text: "Também gostei! Foi muito legal te conhecer 😊", time: "14:32", isMine: false },
-  { id: "3", text: "Adorei nosso papo de ontem!", time: "14:30", isMine: true },
-  { id: "2", text: "Que bom que a gente deu match 💜", time: "14:28", isMine: false },
-  { id: "1", text: "Oi! Tudo bem?", time: "14:26", isMine: true },
-];
+const DEFAULT_CONTACT_NAME = "Conversa";
 
-function MessageBubble({ message }) {
+function MessageStatusIcon({ status }) {
+  if (status === MESSAGE_STATUS.PENDING) {
+    return (
+      <Ionicons name="time-outline" size={13} color={colors.textMuted} accessibilityLabel="Enviando" />
+    );
+  }
+  if (status === MESSAGE_STATUS.FAILED) {
+    return (
+      <Ionicons name="alert-circle" size={14} color={colors.dangerLight} accessibilityLabel="Falha no envio" />
+    );
+  }
   return (
+    <Ionicons name="checkmark-done" size={14} color={colors.primaryLight} accessibilityLabel="Enviada" />
+  );
+}
+
+function MessageBubble({ message, imageSize, onRetry }) {
+  const failed = message.status === MESSAGE_STATUS.FAILED;
+  const bubble = (
     <View
       style={[
-        styles.messageRow,
-        message.isMine ? styles.myMessageRow : styles.theirMessageRow,
+        styles.messageBubble,
+        message.isMine ? styles.myMessage : styles.theirMessage,
+        failed && styles.failedMessage,
       ]}
     >
-      <View
-        style={[
-          styles.messageBubble,
-          message.isMine ? styles.myMessage : styles.theirMessage,
-        ]}
-      >
+      {message.isImage ? (
+        <Image
+          source={{ uri: message.text }}
+          style={[styles.messageImage, { width: imageSize, height: imageSize }]}
+          accessibilityLabel="Imagem enviada na conversa"
+        />
+      ) : (
         <Text style={styles.messageText}>{message.text}</Text>
-        <View style={styles.messageMeta}>
-          <Text style={styles.messageTime}>{message.time}</Text>
-          {message.isMine ? (
-            <Ionicons
-              name="checkmark-done"
-              size={14}
-              color={colors.primaryLight}
-              accessibilityLabel="Enviada"
-            />
-          ) : null}
-        </View>
+      )}
+      <View style={styles.messageMeta}>
+        <Text style={[styles.messageTime, message.isMine && styles.myMessageTime]}>{message.time}</Text>
+        {message.isMine ? <MessageStatusIcon status={message.status} /> : null}
       </View>
+      {failed ? <Text style={styles.failedHint}>Não enviada · toque para tentar de novo</Text> : null}
+    </View>
+  );
+
+  return (
+    <View
+      testID={`chat-message-${message.id}`}
+      style={[styles.messageRow, message.isMine ? styles.myMessageRow : styles.theirMessageRow]}
+    >
+      {failed ? (
+        <TouchableOpacity
+          testID={`chat-retry-${message.id}`}
+          onPress={() => onRetry(message)}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Mensagem não enviada. Toque para tentar de novo"
+        >
+          {bubble}
+        </TouchableOpacity>
+      ) : (
+        bubble
+      )}
     </View>
   );
 }
 
 export default function Chat({ navigation, route }) {
-  const contact = route?.params?.contact || {};
-  const contactName = contact.name || route?.params?.name || "Mariana Costa";
-  const contactPhoto = contact.avatar || contact.photo;
-  const [messages, setMessages] = useState(INITIAL_MESSAGES);
+  const params = route?.params || {};
+  const paramConversationId = params.conversationId ?? null;
+  const paramContact = params.contact || {};
+  const paramContactId = paramContact.id ?? null;
+  const paramContactName = paramContact.name || params.name || null;
+  const { user } = useAuth();
+  const { width } = useWindowDimensions();
+  const imageSize = Math.round(Math.min(240, width * 0.6));
+
+  // T049 — aberto por notificação: veio só o id da conversa → busca o contato.
+  const needsContactLookup = paramConversationId != null && (!paramContactName || paramContactId == null);
+  // Modal de match da Descoberta: veio só o perfil → busca a conversa do match.
+  const needsConversationLookup = paramConversationId == null && paramContactId != null;
+
+  // Dados buscados na lista de conversas, marcados com a chave dos parâmetros
+  // que os originaram: se a aba for reaberta com outros parâmetros, o
+  // resultado antigo é ignorado na hora (sem "piscar" dados da conversa errada).
+  const lookupKey = `${paramConversationId ?? ""}|${paramContactId ?? ""}`;
+  const [lookup, setLookup] = useState({ key: null, conversationId: null, contact: null });
+  const lookupIsCurrent = lookup.key === lookupKey;
+  const resolvingConversation = needsConversationLookup && !lookupIsCurrent;
   const [draft, setDraft] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [isOnline, setIsOnline] = useState(false);
-  const nextMessageId = useRef(0);
+
+  const conversationId = paramConversationId ?? (lookupIsCurrent ? lookup.conversationId : null);
+  const resolvedContact = lookupIsCurrent ? lookup.contact : null;
+  const {
+    messages,
+    loading,
+    error,
+    connected,
+    otherTyping,
+    notifyTyping,
+    sendMessage,
+    retryMessage,
+    reload,
+  } = useChat(conversationId, user?.id);
+
+  const contactName = paramContactName || resolvedContact?.name || DEFAULT_CONTACT_NAME;
+  const contactPhoto = paramContact.avatar || paramContact.photo || params.avatar || resolvedContact?.avatar;
+  const contactId = paramContactId ?? resolvedContact?.id ?? null;
 
   useEffect(() => {
-    const handleKeyPress = () => {
-      emitTyping(true, contact.id || "");
-    };
+    if (!needsContactLookup && !needsConversationLookup) return undefined;
 
-    const textArea = document.querySelector("textarea");
-    if (textArea) {
-      textArea.addEventListener("input", handleKeyPress);
-    }
+    let cancelled = false;
+    const request = needsContactLookup
+      ? findConversationContact(paramConversationId).then((contact) => ({ conversationId: null, contact }))
+      : findConversationWithUser(paramContactId);
 
+    request
+      .then((found) => {
+        if (cancelled) return;
+        setLookup({ key: lookupKey, conversationId: found?.conversationId ?? null, contact: found?.contact ?? null });
+      })
+      .catch((err) => {
+        console.error("Erro ao identificar a conversa:", err?.message || err);
+        if (!cancelled) setLookup({ key: lookupKey, conversationId: null, contact: null });
+      });
     return () => {
-      if (textArea) {
-        textArea.removeEventListener("input", handleKeyPress);
-      }
+      cancelled = true;
     };
-  }, [contact.id]);
+  }, [lookupKey, paramConversationId, paramContactId, needsContactLookup, needsConversationLookup]);
 
+  // Marca a conversa como "aberta" enquanto a tela está em foco — assim
+  // mensagens dela não geram notificação (T048).
   useEffect(() => {
-    // T046 — Escutar evento de "digitando" do outro usuário
-    const unsubscribeTyping = onTyping((data) => {
-      setIsTyping(data.isTyping);
-    });
-
-    // T046 — Verificar status online/offline
-    const status = getSocketStatus();
-    setIsOnline(status.connected);
-
-    // Cleanup on unmount
+    if (!conversationId) return undefined;
+    const focused = typeof navigation?.isFocused === "function" ? navigation.isFocused() : true;
+    if (focused) setActiveConversation(conversationId);
+    const unsubscribeFocus = navigation?.addListener?.("focus", () => setActiveConversation(conversationId));
+    const unsubscribeBlur = navigation?.addListener?.("blur", () => clearActiveConversation(conversationId));
     return () => {
-      unsubscribeTyping();
+      if (typeof unsubscribeFocus === "function") unsubscribeFocus();
+      if (typeof unsubscribeBlur === "function") unsubscribeBlur();
+      clearActiveConversation(conversationId);
     };
-  }, [contact.id]);
+  }, [conversationId, navigation]);
 
   function goBack() {
     navigation?.navigate?.("Matches");
   }
 
-  function sendMessage() {
+  function handleChangeDraft(text) {
+    setDraft(text);
+    notifyTyping?.(text);
+  }
+
+  function handleSend() {
     const text = draft.trim();
-    if (!text) return;
-
-    const time = new Date().toLocaleTimeString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    // T046 — Emitir evento de typing quando usuário enviar mensagem
-    emitTyping(false, contact.id || "");
-
-    setMessages((currentMessages) => [
-      {
-        id: `local-${++nextMessageId.current}`,
-        text,
-        time,
-        isMine: true,
-      },
-      ...currentMessages,
-    ]);
+    if (!text || !conversationId) return;
     setDraft("");
+    sendMessage(text);
   }
 
   // T037 — Bloquear usuário a partir da tela de Chat.
   async function handleBlockUser() {
-    const blockedId = contact.id || contact.username;
-    if (!blockedId) {
+    if (!contactId) {
       Alert.alert("Não foi possível identificar o usuário.");
       return;
     }
@@ -143,19 +209,82 @@ export default function Chat({ navigation, route }) {
           style: "destructive",
           onPress: async () => {
             try {
-              await blockUser(blockedId);
+              await blockUser(contactId);
               Alert.alert("Usuário bloqueado", "A conversa foi encerrada.");
               navigation?.navigate?.("Matches");
-            } catch (error) {
-              console.error("Erro ao bloquear usuário:", error);
+            } catch (err) {
+              console.error("Erro ao bloquear usuário:", err);
               Alert.alert(
                 "Não foi possível bloquear",
-                error?.response?.data?.error || "Tente novamente em alguns instantes."
+                err?.response?.data?.error || "Tente novamente em alguns instantes."
               );
             }
           },
         },
       ]
+    );
+  }
+
+  const canSend = !!conversationId && !!draft.trim();
+
+  function renderBody() {
+    if (messages.length > 0) {
+      return (
+        <FlatList
+          testID="chat-message-list"
+          data={messages}
+          inverted
+          keyExtractor={(message) => message.id}
+          renderItem={({ item }) => (
+            <MessageBubble message={item} imageSize={imageSize} onRetry={retryMessage} />
+          )}
+          contentContainerStyle={styles.messageList}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        />
+      );
+    }
+
+    if (loading || resolvingConversation) {
+      return (
+        <View style={styles.centered} testID="chat-loading">
+          <ActivityIndicator size="large" color={colors.primary} accessibilityLabel="Carregando mensagens" />
+        </View>
+      );
+    }
+
+    if (error) {
+      return (
+        <View style={styles.centered} testID="chat-error">
+          <Ionicons name="cloud-offline-outline" size={44} color={colors.textMuted} />
+          <Text style={styles.centeredTitle}>{error}</Text>
+          <TouchableOpacity
+            testID="chat-reload-button"
+            style={styles.reloadButton}
+            onPress={reload}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Tentar carregar as mensagens de novo"
+          >
+            <Text style={styles.reloadText}>Tentar novamente</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.centered} testID="chat-empty">
+        <Ionicons name="chatbubbles-outline" size={44} color={colors.textMuted} />
+        <Text style={styles.centeredTitle}>
+          {conversationId ? "Nenhuma mensagem ainda" : "Conversa não encontrada"}
+        </Text>
+        <Text style={styles.centeredSubtitle}>
+          {conversationId
+            ? `Mande a primeira mensagem para ${contactName}. 👋`
+            : "Volte para a lista e escolha uma conversa."}
+        </Text>
+      </View>
     );
   }
 
@@ -182,16 +311,23 @@ export default function Chat({ navigation, route }) {
           <Avatar uri={contactPhoto} name={contactName} size={44} />
 
           <View style={styles.contactInfo}>
-            <Text style={styles.contactName} numberOfLines={1}>
+            <Text style={styles.contactName} numberOfLines={1} accessibilityRole="header">
               {contactName}
             </Text>
-            <View style={styles.onlineStatus}>
-              <View style={styles.onlineIndicator} />
-              <Text style={styles.onlineText}>online agora</Text>
-            </View>
+            {otherTyping ? (
+              <View style={styles.connectionStatus} testID="chat-typing-indicator" accessibilityLiveRegion="polite">
+                <Text style={styles.typingText}>digitando…</Text>
+              </View>
+            ) : !connected && conversationId ? (
+              <View style={styles.connectionStatus} testID="chat-connection-status">
+                <View style={styles.offlineIndicator} />
+                <Text style={styles.connectionText}>Reconectando ao chat…</Text>
+              </View>
+            ) : null}
           </View>
 
           <TouchableOpacity
+            testID="chat-options-button"
             style={styles.headerAction}
             activeOpacity={0.7}
             accessibilityRole="button"
@@ -202,17 +338,7 @@ export default function Chat({ navigation, route }) {
           </TouchableOpacity>
         </View>
 
-        <FlatList
-          testID="chat-message-list"
-          data={messages}
-          inverted
-          keyExtractor={(message) => message.id}
-          renderItem={({ item }) => <MessageBubble message={item} />}
-          contentContainerStyle={styles.messageList}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-        />
+        {renderBody()}
 
         <View style={styles.composer}>
           <Input
@@ -221,19 +347,21 @@ export default function Chat({ navigation, route }) {
             containerStyle={styles.inputContainer}
             placeholder="Escreva uma mensagem..."
             value={draft}
-            onChangeText={setDraft}
+            onChangeText={handleChangeDraft}
             returnKeyType="send"
-            onSubmitEditing={sendMessage}
+            onSubmitEditing={handleSend}
+            editable={!!conversationId}
+            maxLength={2000}
           />
           <TouchableOpacity
             testID="chat-send-button"
-            style={[styles.sendButton, !draft.trim() && styles.sendButtonDisabled]}
-            onPress={sendMessage}
-            disabled={!draft.trim()}
+            style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
+            onPress={handleSend}
+            disabled={!canSend}
             activeOpacity={0.8}
             accessibilityRole="button"
             accessibilityLabel="Enviar mensagem"
-            accessibilityState={{ disabled: !draft.trim() }}
+            accessibilityState={{ disabled: !canSend }}
           >
             <Ionicons name="send" size={19} color={colors.white} />
           </TouchableOpacity>
@@ -260,7 +388,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   backButton: {
-    width: 40,
+    width: 44,
     height: 48,
     alignItems: "center",
     justifyContent: "center",
@@ -273,24 +401,29 @@ const styles = StyleSheet.create({
     ...typography.h3,
     color: colors.text,
   },
-  onlineStatus: {
+  connectionStatus: {
     flexDirection: "row",
     alignItems: "center",
     marginTop: 2,
   },
-  onlineIndicator: {
+  offlineIndicator: {
     width: 7,
     height: 7,
     borderRadius: radius.pill,
-    backgroundColor: colors.success,
+    backgroundColor: colors.warning,
     marginRight: spacing.xs,
   },
-  onlineText: {
+  connectionText: {
     ...typography.caption,
     color: colors.textMuted,
   },
+  typingText: {
+    ...typography.caption,
+    fontStyle: "italic",
+    color: colors.primaryLight,
+  },
   headerAction: {
-    width: 40,
+    width: 44,
     height: 48,
     alignItems: "center",
     justifyContent: "center",
@@ -299,6 +432,37 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
+  },
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+  },
+  centeredTitle: {
+    ...typography.h3,
+    color: colors.text,
+    textAlign: "center",
+    marginTop: spacing.md,
+  },
+  centeredSubtitle: {
+    ...typography.body,
+    color: colors.textMuted,
+    textAlign: "center",
+    marginTop: spacing.sm,
+  },
+  reloadButton: {
+    marginTop: spacing.lg,
+    minHeight: 48,
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+  },
+  reloadText: {
+    ...typography.body,
+    fontWeight: "700",
+    color: colors.white,
   },
   messageRow: {
     width: "100%",
@@ -325,9 +489,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
     borderBottomLeftRadius: radius.sm,
   },
+  failedMessage: {
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
   messageText: {
     ...typography.body,
     color: colors.text,
+  },
+  messageImage: {
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
   },
   messageMeta: {
     flexDirection: "row",
@@ -339,7 +511,16 @@ const styles = StyleSheet.create({
   messageTime: {
     ...typography.caption,
     color: colors.textMuted,
-    fontSize: 10,
+    fontSize: 11,
+  },
+  // T052 — textMuted sobre a minha bolha (primaryDark) dava 3.3:1; primaryLight dá 4.6:1.
+  myMessageTime: {
+    color: colors.primaryLight,
+  },
+  failedHint: {
+    ...typography.caption,
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   composer: {
     flexDirection: "row",
