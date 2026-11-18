@@ -117,6 +117,20 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // Atualiza o usuário logado em memória + SecureStore (foto, nome, etc.).
+  // Usado pela tela de Perfil ao salvar/enviar foto, para o avatar do topo da
+  // Descoberta e o do Perfil refletirem a mudança na hora.
+  async function updateUser(partial) {
+    if (!partial || typeof partial !== "object") return;
+    setUser((current) => {
+      const next = { ...(current || {}), ...partial };
+      SecureStore.setItemAsync("user_data", JSON.stringify(next)).catch((error) =>
+        console.error("Erro ao salvar dados do usuário:", error)
+      );
+      return next;
+    });
+  }
+
   // Função de Logout
   async function signOut() {
     try {
@@ -132,7 +146,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ signed: !!user, user, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ signed: !!user, user, loading, signIn, signUp, signOut, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

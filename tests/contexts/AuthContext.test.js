@@ -18,7 +18,7 @@ jest.mock('../../src/services/api', () => ({
 // que disparam as ações pra gente poder inspecionar o estado.
 // ─────────────────────────────────────────────────────────────
 function TestConsumer() {
-  const { signed, user, loading, signIn, signUp, signOut } = useAuth();
+  const { signed, user, loading, signIn, signUp, signOut, updateUser } = useAuth();
 
   return (
     <>
@@ -36,6 +36,9 @@ function TestConsumer() {
       </TouchableOpacity>
       <TouchableOpacity testID="btn-signout" onPress={signOut}>
         <Text>signOut</Text>
+      </TouchableOpacity>
+      <TouchableOpacity testID="btn-update" onPress={() => updateUser({ foto_url: 'https://x/nova.jpg' })}>
+        <Text>updateUser</Text>
       </TouchableOpacity>
     </>
   );
@@ -182,5 +185,30 @@ describe('AuthContext — signOut', () => {
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('user_data');
     expect(screen.getByTestId('signed').props.children).toBe('false');
     expect(screen.getByTestId('user').props.children).toBe('null');
+  });
+});
+
+describe('AuthContext — updateUser', () => {
+  it('mescla campos no usuário e persiste no SecureStore', async () => {
+    SecureStore.getItemAsync.mockImplementation((key) => {
+      if (key === 'user_token') return Promise.resolve('jwt');
+      if (key === 'user_data') return Promise.resolve(JSON.stringify({ id: '1', name: 'Ana' }));
+      return Promise.resolve(null);
+    });
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId('signed').props.children).toBe('true'));
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('btn-update'));
+    });
+
+    await waitFor(() => {
+      const u = JSON.parse(screen.getByTestId('user').props.children);
+      expect(u).toMatchObject({ id: '1', name: 'Ana', foto_url: 'https://x/nova.jpg' });
+    });
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
+      'user_data',
+      expect.stringContaining('https://x/nova.jpg')
+    );
   });
 });

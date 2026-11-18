@@ -18,12 +18,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { DiscoveryCard, Loader } from "../../components";
+import { Avatar, DiscoveryCard, Loader } from "../../components";
 import { useAuth } from "../../contexts/AuthContext";
 import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPreferences";
 import { avatarFallback, fetchCompatibleProfiles } from "../../services/discovery";
 import { likeProfile } from "../../services/interactions";
 import { distanceKm } from "../../services/userLocation";
+import { fetchMyProfile } from "../../services/profile";
+import { resolveMediaUrl } from "../../utils/mediaUrl";
 import { REPORT_REASONS, submitReport } from "../../services/moderation";
 import { blockUser } from "../../services/block";
 import { colors, radius, spacing, typography } from "../../styles/theme";
@@ -64,7 +66,7 @@ function shortFilterLabel(prefs) {
 }
 
 export default function Discovery({ navigation }) {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [index, setIndex] = useState(0);
   const [prefs, setPrefs] = useState(DEFAULT_PREFERENCES);
   const [reportTarget, setReportTarget] = useState(null);
@@ -82,6 +84,10 @@ export default function Discovery({ navigation }) {
   const userPhoto = Array.isArray(user?.photos)
     ? user.photos.find((photo) => typeof photo === "string" && photo.startsWith("http"))
     : null;
+  // Foto principal do usuário logado (Cloudinary) para o avatar do topo.
+  // Sem foto → o Avatar mostra as iniciais do nome (nunca foto de teste fixa).
+  const myAvatarUri =
+    resolveMediaUrl(userPhoto || (typeof user?.foto_url === "string" ? user.foto_url : null)) || undefined;
   const visibleDeck = deck.filter(
     (item) => !hiddenProfileIds.current.has(item.id)
   );
@@ -101,6 +107,22 @@ export default function Discovery({ navigation }) {
       setLoading(false);
     }
   }, []);
+
+  // Hidrata o contexto com o perfil real (foto do Cloudinary) ao abrir a
+  // Descoberta, para o avatar do topo não depender de visitar o Perfil antes.
+  useEffect(() => {
+    let active = true;
+    fetchMyProfile()
+      .then((data) => {
+        if (!active || !data) return;
+        const photos = Array.isArray(data.photos) ? data.photos : [];
+        updateUser?.({ name: data.name, foto_url: data.foto_url, photos });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [updateUser]);
 
   useEffect(() => {
     let mounted = true;
@@ -275,7 +297,7 @@ export default function Discovery({ navigation }) {
             accessibilityRole="button"
             accessibilityLabel="Abrir configurações"
           >
-            <Image source={{ uri: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80" }} style={styles.avatar} />
+            <Avatar uri={myAvatarUri} name={user?.name} size={40} />
           </TouchableOpacity>
           <View style={styles.brandCenter} pointerEvents="none">
             <Image testID="discovery-brand" source={require("../../../assets/logo-chama.png")} style={styles.brandLogo} resizeMode="contain" />

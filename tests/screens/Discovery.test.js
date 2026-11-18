@@ -4,8 +4,10 @@
 // função pura applyPreferences (T027/T028).
 import React from 'react';
 import { Alert } from 'react-native';
-import { render, screen, fireEvent, act } from '@testing-library/react-native';
+import { render, screen, fireEvent, act, within } from '@testing-library/react-native';
 import Discovery, { applyPreferences } from '../../src/screens/Discovery';
+import { fetchMyProfile } from "../../src/services/profile";
+import { Image } from "react-native";
 import { MOCK_PROFILES } from '../../src/screens/Discovery/mockProfiles';
 import { fetchCompatibleProfiles } from '../../src/services/discovery';
 import { likeProfile } from '../../src/services/interactions';
@@ -43,6 +45,10 @@ jest.mock('../../src/services/moderation', () => ({
     'Informação falsa',
   ],
   submitReport: jest.fn(),
+}));
+
+jest.mock('../../src/services/profile', () => ({
+  fetchMyProfile: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('../../src/services/interactions', () => ({
@@ -253,5 +259,21 @@ describe('Discovery — redesign liquid glass', () => {
     fireEvent.press(screen.getByTestId('submit-report'));
 
     expect(await screen.findByText('Você viu todo mundo')).toBeTruthy();
+  });
+});
+
+describe("Discovery — avatar do topo (foto real do usuário)", () => {
+  it("hidrata o perfil ao montar (para exibir a foto real do Cloudinary)", async () => {
+    await renderDiscovery();
+    expect(fetchMyProfile).toHaveBeenCalled();
+  });
+
+  it("não usa mais a foto .jpeg fixa de teste no avatar do topo", async () => {
+    await renderDiscovery();
+    // Escopo: só o avatar do topo (os cards do baralho usam fotos do mock).
+    const avatarBtn = screen.getByTestId("btn-my-avatar");
+    const imgs = within(avatarBtn).UNSAFE_queryAllByType(Image);
+    const temFotoFixa = imgs.some((img) => String(img.props?.source?.uri || "").includes("unsplash"));
+    expect(temFotoFixa).toBe(false);
   });
 });

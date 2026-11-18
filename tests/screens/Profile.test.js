@@ -63,6 +63,7 @@ jest.mock("../../src/services/api", () => ({
   default: {
     get: jest.fn(),
     patch: jest.fn(),
+    put: jest.fn(),
   },
 }));
 
@@ -326,28 +327,25 @@ describe("Profile — Edição de perfil (T019)", () => {
     api.get.mockResolvedValue({ data: makeProfile() });
   });
 
-  it("exibe Alert 'Sucesso' ao tocar em SALVAR (comportamento atual)", async () => {
+  it("SALVAR envia o perfil (PUT) no contrato do web e avisa sucesso", async () => {
+    api.put.mockResolvedValue({ data: { user: { name: "Fulano de Tal" } } });
     await renderProfile();
 
-    // O botão SALVAR é um TouchableOpacity cujo onPress é handleSave.
-    // Ele não tem testID, então a gente localiza pelo texto do filho.
     const salvarText = screen.getByText("SALVAR");
-    // Sobe na árvore até o TouchableOpacity mais próximo com onPress.
     let node = salvarText.parent;
     while (node && typeof node.props.onPress !== "function") {
       node = node.parent;
     }
-
     expect(node).toBeTruthy();
     await act(async () => {
       await node.props.onPress();
     });
 
+    expect(api.put).toHaveBeenCalledWith(
+      "/api/users/perfil",
+      expect.objectContaining({ name: "Fulano de Tal", bio: "" })
+    );
     const titles = Alert.alert.mock.calls.map((c) => c[0]);
     expect(titles).toContain("Sucesso");
-    expect(Alert.alert).toHaveBeenCalledWith(
-      "Sucesso",
-      "Dados de perfil actualizados com sucesso!"
-    );
   });
 });
