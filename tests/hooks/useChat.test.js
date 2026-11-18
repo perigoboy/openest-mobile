@@ -16,6 +16,10 @@ jest.mock("../../src/services/hiddenMessages", () => ({
   getHiddenMessageIds: jest.fn().mockResolvedValue([]),
   hideMessageForMe: jest.fn().mockResolvedValue([]),
 }));
+jest.mock("../../src/services/events", () => ({
+  createEvent: jest.fn().mockResolvedValue({}),
+  respondInvite: jest.fn().mockResolvedValue({}),
+}));
 
 jest.mock("../../src/services/socket", () => {
   const handlers = {};
@@ -41,6 +45,7 @@ jest.mock("../../src/services/socket", () => {
       SEND_MESSAGE: "send_message",
       NEW_MESSAGE: "new_message",
       MESSAGE_DELETED: "message_deleted",
+      INVITE_UPDATED: "invite_updated",
       TYPING_START: "typing_start",
       TYPING_STOP: "typing_stop",
       USER_TYPING: "user_typing",
@@ -511,5 +516,57 @@ describe("useChat — anexos e ações da mensagem", () => {
     const { result } = await renderChatHook();
     act(() => socket.fire("new_message", { id: 99, conversation_id: 10, sender_id: OTHER, content: "oculta" }));
     expect(result.current.messages.some((m) => m.id === "99")).toBe(false);
+  });
+});
+
+describe("useChat — convite de encontro (agendamento)", () => {
+  const { createEvent, respondInvite } = require("../../src/services/events");
+  const INVITE = { conversation_id: 10, other_user_id: OTHER, titulo: "Café", scheduled_at: "2026-11-18T15:07", local: "Centro", nota: "" };
+
+  it("sendInvite envia a mensagem [CONVITE_EVENTO] como card otimista", async () => {
+    emitWithAck.mockReturnValue(new Promise(() => {})); // pendente
+    const { result } = await renderChatHook();
+    act(() => {
+      result.current.sendInvite(INVITE);
+    });
+    const [event, payload] = emitWithAck.mock.calls.at(-1);
+    expect(event).toBe("send_message");
+    expect(payload.content.startsWith("[CONVITE_EVENTO]")).toBe(true);
+    expect(result.current.messages[0].invite).toMatchObject({ titulo: "Café" });
+  });
+
+  it("respondToInvite (aceitar) cria o evento, responde e troca pelo status", async () => {
+    const { result } = await renderChatHook();
+    act(() => socket.fire("new_message", { id: 50, conversation_id: 10, sender_id: OTHER, content: `[CONVITE_EVENTO]${JSON.stringify(INVITE)}` }));
+    const invite = result.current.messages.find((m) => m.invite);
+    expect(invite).toBeTruthy();
+
+    await act(async () => {
+      await result.current.respondToInvite(invite, true, "u-sender");
+    });
+
+    expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({ other_user_id: "u-sender", titulo: "Café" }));
+    expect(respondInvite).toHaveBeenCalledWith(invite.id, "aceite");
+    expect(result.current.messages.find((m) => m.id === invite.id).text).toBe("✅ Convite Aceite!");
+  });
+
+  it("respondToInvite (recusar) não cria evento", async () => {
+    const { result } = await renderChatHook();
+    act(() => socket.fire("new_message", { id: 51, conversation_id: 10, sender_id: OTHER, content: `[CONVITE_EVENTO]${JSON.stringify(INVITE)}` }));
+    const invite = result.current.messages.find((m) => m.invite);
+    createEvent.mockClear();
+    await act(async () => {
+      await result.current.respondToInvite(invite, false, "u-sender");
+    });
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(respondInvite).toHaveBeenCalledWith(invite.id, "recusado");
+    expect(result.current.messages.find((m) => m.id === invite.id).text).toBe("❌ Convite Recusado");
+  });
+
+  it("evento invite_updated do socket atualiza a mensagem", async () => {
+    const { result } = await renderChatHook();
+    act(() => socket.fire("new_message", { id: 52, conversation_id: 10, sender_id: ME, content: `[CONVITE_EVENTO]${JSON.stringify(INVITE)}` }));
+    act(() => socket.fire("invite_updated", { messageId: "52", status: "aceite" }));
+    expect(result.current.messages.find((m) => m.id === "52").text).toBe("✅ Convite Aceite!");
   });
 });

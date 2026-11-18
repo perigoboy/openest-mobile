@@ -29,6 +29,34 @@ export function isImageContent(text = "") {
   return IMAGE_URL.test(value) || GIF_HOST.test(value) || value.includes("res.cloudinary.com");
 }
 
+// Convite de encontro — mesma TAG do web: "[CONVITE_EVENTO]" + JSON.
+export const INVITE_TAG = "[CONVITE_EVENTO]";
+export const INVITE_ACCEPTED_TEXT = "✅ Convite Aceite!";
+export const INVITE_REJECTED_TEXT = "❌ Convite Recusado";
+
+export function buildInviteMessage(payload) {
+  return `${INVITE_TAG}${JSON.stringify(payload || {})}`;
+}
+
+// Devolve os dados do convite ({ titulo, scheduled_at, local, nota,
+// conversation_id, other_user_id }) ou null se não for um convite pendente.
+export function parseInviteMessage(text = "") {
+  const value = String(text);
+  if (!value.startsWith(INVITE_TAG)) return null;
+  try {
+    return JSON.parse(value.slice(INVITE_TAG.length));
+  } catch {
+    return null;
+  }
+}
+
+// Status visível depois que o convite foi respondido.
+export function inviteStatusFromText(text = "") {
+  if (text === INVITE_ACCEPTED_TEXT) return "accepted";
+  if (text === INVITE_REJECTED_TEXT) return "rejected";
+  return null;
+}
+
 // Detecta "📍 Localização partilhada" + link do Maps e extrai a URL/coords.
 export function parseLocationMessage(text = "") {
   const value = String(text);
@@ -58,7 +86,8 @@ export function normalizeMessage(raw, currentUserId) {
   if (!raw || raw.id == null) return null;
   const text = typeof raw.content === "string" ? raw.content : "";
   const createdAt = raw.createdAt || raw.created_at || null;
-  const isImage = isImageContent(text);
+  const invite = parseInviteMessage(text);
+  const isImage = !invite && isImageContent(text);
   return {
     id: String(raw.id),
     text,
@@ -66,7 +95,9 @@ export function normalizeMessage(raw, currentUserId) {
     createdAt,
     isMine: currentUserId != null && String(raw.sender_id) === String(currentUserId),
     isImage,
-    location: isImage ? null : parseLocationMessage(text),
+    invite, // dados do convite de encontro (pendente) ou null
+    inviteStatus: inviteStatusFromText(text), // 'accepted' | 'rejected' | null
+    location: isImage || invite ? null : parseLocationMessage(text),
     // Citação da resposta (local; o backend não persiste — igual ao web).
     replyTo: raw.reply_to_content
       ? { content: raw.reply_to_content, sender: raw.reply_to_sender || null }
@@ -89,17 +120,36 @@ export function normalizeMessageList(rawList, currentUserId) {
 }
 
 export function createPendingMessage(tempId, text, { replyTo = null, now = new Date() } = {}) {
+  const invite = parseInviteMessage(text);
   return {
     id: tempId,
     text,
     time: formatMessageTime(now),
     createdAt: now.toISOString(),
     isMine: true,
-    isImage: isImageContent(text),
-    location: parseLocationMessage(text),
+    isImage: !invite && isImageContent(text),
+    invite,
+    inviteStatus: inviteStatusFromText(text),
+    location: invite ? null : parseLocationMessage(text),
     replyTo,
     status: MESSAGE_STATUS.PENDING,
   };
+}
+
+// Convite respondido (aceite/recusado): troca o conteúdo pelo status e tira o
+// card. Usado ao tocar em Aceitar/Recusar e ao receber `invite_updated`.
+export function applyInviteResponse(list, messageId, responseStatus) {
+  const id = String(messageId);
+  const text = responseStatus === "aceite" || responseStatus === "accepted"
+    ? INVITE_ACCEPTED_TEXT
+    : INVITE_REJECTED_TEXT;
+  let changed = false;
+  const next = list.map((m) => {
+    if (m.id !== id) return m;
+    changed = true;
+    return { ...m, text, invite: null, inviteStatus: inviteStatusFromText(text), location: null };
+  });
+  return changed ? next : list;
 }
 
 // Bolha otimista de IMAGEM: mostra a prévia local (uri do device) enquanto o

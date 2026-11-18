@@ -41,20 +41,18 @@ describe("block service — blockUser (T037)", () => {
     jest.clearAllMocks();
   });
 
-  it("dispara POST /api/bloquear com o ID do usuário bloqueado", async () => {
+  it("dispara POST /api/passar/:id (rota real; a /api/bloquear dava 404)", async () => {
     api.post.mockResolvedValueOnce({ data: { success: true } });
 
     const result = await blockUser(42);
-    
-    expect(api.post).toHaveBeenCalledWith("/api/bloquear", {
-      blocked_id: 42,
-    });
+
+    expect(api.post).toHaveBeenCalledWith("/api/passar/42");
     expect(result).toEqual({ success: true });
   });
 
   it("lança erro se o ID for nulo", async () => {
     await expect(blockUser(null)).rejects.toThrow(
-      "Não foi identificar o usuário a ser bloqueado."
+      "identificar o usuário a ser bloqueado"
     );
     expect(api.post).not.toHaveBeenCalled();
   });

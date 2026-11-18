@@ -3,6 +3,7 @@
 // O envio "normal" é pelo socket (src/hooks/useChat.js); a rota REST é usada
 // quando o socket está desconectado, para a mensagem nunca se perder.
 import api from "./api";
+import { multipartUploadConfig } from "./uploadConfig";
 
 export const MESSAGES_PAGE_SIZE = 30;
 
@@ -47,10 +48,7 @@ export async function sendChatImage(conversationId, asset) {
     name: asset.fileName || `chat-${Date.now()}.jpg`,
     type: asset.mimeType || "image/jpeg",
   });
-  const { data } = await api.post("/api/mensagens/imagem", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-    timeout: 60000, // upload pode passar dos 10s padrão
-  });
+  const { data } = await api.post("/api/mensagens/imagem", formData, multipartUploadConfig());
   return data;
 }
 

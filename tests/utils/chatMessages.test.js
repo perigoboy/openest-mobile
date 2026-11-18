@@ -208,3 +208,50 @@ describe("confirmPendingMessage — preserva a citação local", () => {
     expect(next[0].replyTo).toEqual({ content: "cit", sender: "Você" });
   });
 });
+
+import {
+  INVITE_TAG,
+  buildInviteMessage,
+  parseInviteMessage,
+  inviteStatusFromText,
+  applyInviteResponse,
+} from "../../src/utils/chatMessages";
+
+describe("convite de encontro", () => {
+  const payload = { conversation_id: 9, other_user_id: "u2", titulo: "Café", scheduled_at: "2026-11-18T15:07", local: "Centro", nota: "" };
+
+  it("buildInviteMessage usa a TAG + JSON e parseInviteMessage reverte", () => {
+    const text = buildInviteMessage(payload);
+    expect(text.startsWith(INVITE_TAG)).toBe(true);
+    expect(parseInviteMessage(text)).toEqual(payload);
+  });
+
+  it("parseInviteMessage devolve null para texto normal ou JSON inválido", () => {
+    expect(parseInviteMessage("oi")).toBeNull();
+    expect(parseInviteMessage("[CONVITE_EVENTO]{quebrado")).toBeNull();
+  });
+
+  it("normalizeMessage marca invite e não trata como imagem/localização", () => {
+    const m = normalizeMessage({ id: 1, sender_id: ME, content: buildInviteMessage(payload) }, ME);
+    expect(m.invite).toEqual(payload);
+    expect(m.isImage).toBe(false);
+    expect(m.location).toBeNull();
+    expect(m.inviteStatus).toBeNull();
+  });
+
+  it("inviteStatusFromText reconhece aceite/recusado", () => {
+    expect(inviteStatusFromText("✅ Convite Aceite!")).toBe("accepted");
+    expect(inviteStatusFromText("❌ Convite Recusado")).toBe("rejected");
+    expect(inviteStatusFromText("oi")).toBeNull();
+  });
+
+  it("applyInviteResponse troca o conteúdo pelo status e remove o card", () => {
+    const list = [normalizeMessage({ id: 1, sender_id: ME, content: buildInviteMessage(payload) }, ME)];
+    const accepted = applyInviteResponse(list, "1", "aceite");
+    expect(accepted[0].invite).toBeNull();
+    expect(accepted[0].text).toBe("✅ Convite Aceite!");
+    expect(accepted[0].inviteStatus).toBe("accepted");
+    const rejected = applyInviteResponse(list, "1", "recusado");
+    expect(rejected[0].text).toBe("❌ Convite Recusado");
+  });
+});

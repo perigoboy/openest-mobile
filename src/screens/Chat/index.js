@@ -25,6 +25,8 @@ import * as Clipboard from "expo-clipboard";
 import { Avatar, Input, useToast } from "../../components";
 import GifPickerModal from "../../components/GifPickerModal";
 import AttachmentMenu from "../../components/AttachmentMenu";
+import ScheduleModal from "../../components/ScheduleModal";
+import InviteCard from "../../components/InviteCard";
 import { colors, radius, spacing, typography } from "../../styles/theme";
 import { blockUser } from "../../services/block";
 import { findConversationContact, findConversationWithUser } from "../../services/conversations";
@@ -89,13 +91,23 @@ function LocationCard({ location }) {
   );
 }
 
-function MessageBubble({ message, imageSize, onRetry, onLongPress }) {
+function MessageBubble({ message, imageSize, onRetry, onLongPress, onInviteRespond, responding }) {
   const failed = message.status === MESSAGE_STATUS.FAILED;
   const deleted = message.text === DELETED_TEXT;
 
   let content;
   if (deleted) {
     content = <Text style={[styles.messageText, styles.deletedText]}>{message.text}</Text>;
+  } else if (message.invite) {
+    content = (
+      <InviteCard
+        invite={message.invite}
+        isMine={message.isMine}
+        responding={responding}
+        onAccept={() => onInviteRespond(message, true)}
+        onReject={() => onInviteRespond(message, false)}
+      />
+    );
   } else if (message.isImage) {
     content = (
       <Image
@@ -164,6 +176,8 @@ export default function Chat({ navigation, route }) {
   const imageSize = Math.round(Math.min(240, width * 0.6));
   const [attachOpen, setAttachOpen] = useState(false);
   const [gifOpen, setGifOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [respondingInvite, setRespondingInvite] = useState(false);
   const [replyTo, setReplyTo] = useState(null);
 
   // T049 — aberto por notificação: veio só o id da conversa → busca o contato.
@@ -191,6 +205,8 @@ export default function Chat({ navigation, route }) {
     notifyTyping,
     sendMessage,
     sendImage,
+    sendInvite,
+    respondToInvite,
     retryMessage,
     deleteForEveryone,
     hideForMe,
@@ -319,6 +335,25 @@ export default function Chat({ navigation, route }) {
     setReplyTo(null);
   }
 
+  // Agendamento de encontro (convite [CONVITE_EVENTO]).
+  function handleScheduleSubmit(payload) {
+    setScheduleOpen(false);
+    sendInvite(payload);
+  }
+
+  async function handleInviteRespond(message, accept) {
+    if (respondingInvite) return;
+    setRespondingInvite(true);
+    try {
+      const ok = await respondToInvite(message, accept, contactId);
+      if (!ok) {
+        Alert.alert("Erro", "Não foi possível responder ao convite. Tente novamente.");
+      }
+    } finally {
+      setRespondingInvite(false);
+    }
+  }
+
   // ── Menu de ações da mensagem (long press) ────────────────────────────
   function handleMessageLongPress(message) {
     if (!message || String(message.id).startsWith("temp-")) return;
@@ -395,6 +430,7 @@ export default function Chat({ navigation, route }) {
               imageSize={imageSize}
               onRetry={retryMessage}
               onLongPress={handleMessageLongPress}
+              onInviteRespond={handleInviteRespond}
             />
           )}
           contentContainerStyle={styles.messageList}
@@ -535,6 +571,17 @@ export default function Chat({ navigation, route }) {
           >
             <Ionicons name="add" size={24} color={colors.primaryLight} />
           </TouchableOpacity>
+          <TouchableOpacity
+            testID="chat-schedule-button"
+            style={styles.attachButton}
+            onPress={() => setScheduleOpen(true)}
+            disabled={!conversationId}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Agendar encontro"
+          >
+            <Ionicons name="calendar-outline" size={22} color={colors.primaryLight} />
+          </TouchableOpacity>
           <Input
             testID="chat-message-input"
             accessibilityLabel="Mensagem"
@@ -568,6 +615,14 @@ export default function Chat({ navigation, route }) {
         onSelect={handleAttachSelect}
       />
       <GifPickerModal visible={gifOpen} onClose={() => setGifOpen(false)} onSelect={handleSelectGif} />
+      <ScheduleModal
+        visible={scheduleOpen}
+        contactName={contactName}
+        conversationId={conversationId}
+        otherUserId={contactId}
+        onClose={() => setScheduleOpen(false)}
+        onSubmit={handleScheduleSubmit}
+      />
     </SafeAreaView>
   );
 }

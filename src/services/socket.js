@@ -16,6 +16,7 @@ export const SOCKET_EVENTS = {
   SEND_MESSAGE: "send_message",
   NEW_MESSAGE: "new_message",
   MESSAGE_DELETED: "message_deleted",
+  INVITE_UPDATED: "invite_updated",
   NOTIFICATION: "notification",
   NEW_MATCH: "new_match",
   // T046 — indicador de "digitando…" (mesmos eventos do web)

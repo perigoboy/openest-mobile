@@ -44,7 +44,8 @@ describe("sendChatImage", () => {
     expect(saved.id).toBe(5);
     const [url, body, config] = api.post.mock.calls[0];
     expect(url).toBe("/api/mensagens/imagem");
-    expect(config.headers["Content-Type"]).toBe("multipart/form-data");
+    // Sem Content-Type fixo: o RN gera o boundary (config traz transformRequest).
+    expect(typeof config.transformRequest).toBe("function");
     expect(body).toBeInstanceOf(FormData);
   });
   it("rejeita imagem sem uri", async () => {

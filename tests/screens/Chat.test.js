@@ -35,6 +35,11 @@ jest.mock("expo-image-picker", () => ({
   launchCameraAsync: jest.fn().mockResolvedValue({ canceled: true }),
 }));
 jest.mock("../../src/services/giphy", () => ({ searchGifs: jest.fn().mockResolvedValue([]) }));
+jest.mock("@react-native-community/datetimepicker", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  return { __esModule: true, default: (props) => React.createElement(View, props) };
+});
 
 const MESSAGES = [
   { id: "4", text: "Também gostei! 😊", time: "14:32", isMine: false, isImage: false, status: "sent" },
@@ -43,6 +48,8 @@ const MESSAGES = [
 
 const sendMessage = jest.fn();
 const sendImage = jest.fn();
+const sendInvite = jest.fn();
+const respondToInvite = jest.fn().mockResolvedValue(true);
 const notifyTyping = jest.fn();
 const retryMessage = jest.fn();
 const deleteForEveryone = jest.fn();
@@ -59,6 +66,8 @@ function mockChatState(overrides = {}) {
     notifyTyping,
     sendMessage,
     sendImage,
+    sendInvite,
+    respondToInvite,
     retryMessage,
     deleteForEveryone,
     hideForMe,
@@ -480,5 +489,39 @@ describe("Chat — card de localização", () => {
     fireEvent.press(screen.getByTestId("chat-location-card"));
     expect(openURL).toHaveBeenCalledWith("http://maps.google.com/maps?q=1,2");
     openURL.mockRestore();
+  });
+});
+
+describe("Chat — agendamento de encontro", () => {
+  it("botão de calendário abre o modal de agendar", () => {
+    renderChat();
+    fireEvent.press(screen.getByTestId("chat-schedule-button"));
+    expect(screen.getByTestId("schedule-modal")).toBeTruthy();
+  });
+
+  it("convite recebido renderiza o card com Aceitar/Recusar", () => {
+    mockChatState({
+      messages: [
+        { id: "20", text: "[CONVITE_EVENTO]{}", time: "10:00", isMine: false, isImage: false, status: "sent",
+          invite: { titulo: "Café", local: "Centro", scheduled_at: "2026-11-18T15:07:00" } },
+      ],
+    });
+    renderChat();
+    expect(screen.getByTestId("invite-card")).toBeTruthy();
+    expect(screen.getByText("Café")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("invite-accept"));
+    expect(respondToInvite).toHaveBeenCalledWith(expect.objectContaining({ id: "20" }), true, "u2");
+  });
+
+  it("convite enviado por mim mostra 'Aguardando resposta…'", () => {
+    mockChatState({
+      messages: [
+        { id: "21", text: "[CONVITE_EVENTO]{}", time: "10:00", isMine: true, isImage: false, status: "sent",
+          invite: { titulo: "Café", scheduled_at: "2026-11-18T15:07:00" } },
+      ],
+    });
+    renderChat();
+    expect(screen.getByTestId("invite-waiting")).toBeTruthy();
+    expect(screen.queryByTestId("invite-accept")).toBeNull();
   });
 });

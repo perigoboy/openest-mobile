@@ -1,6 +1,6 @@
 // tests/services/match.test.js — Front-3 (Encontros: endpoint + normalização)
 import api from "../../src/services/api";
-import { cancelEncontro, fetchMatches, normalizeEncontro } from "../../src/services/match";
+import { cancelEncontro, fetchMatches, formatEncontroDate, googleCalendarUrl, normalizeEncontro } from "../../src/services/match";
 
 jest.mock("../../src/services/api", () => ({
   __esModule: true,
@@ -32,11 +32,15 @@ describe("fetchMatches", () => {
       ],
     });
     const list = await fetchMatches();
-    expect(list[0]).toEqual({
+    expect(list[0]).toMatchObject({
       id: "match-abc", rawId: "abc", tipo: "match", name: "Regis",
-      photo: "https://res.cloudinary.com/x/regis.jpg", subtitle: "A combinar via chat", conversationId: 8,
+      photo: "https://res.cloudinary.com/x/regis.jpg", conversationId: 8,
+      status: "A combinar", dateTime: null, googleUrl: null,
     });
-    expect(list[1]).toMatchObject({ id: "sched-3", rawId: "3", tipo: "agendado", name: "Ana", photo: null, conversationId: 5 });
+    expect(list[1]).toMatchObject({
+      id: "sched-3", rawId: "3", tipo: "agendado", name: "Ana", photo: null,
+      conversationId: 5, status: "Agendado", local: "Café Centro",
+    });
   });
 
   it("resposta fora do formato vira lista vazia (sem quebrar a tela)", async () => {
@@ -66,5 +70,27 @@ describe("cancelEncontro", () => {
   it("match não tem rota de desfazer: resolve sem chamar a API", async () => {
     await expect(cancelEncontro({ tipo: "match", rawId: "abc" })).resolves.toEqual({ skipped: true });
     expect(api.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe("agenda do encontro", () => {
+  it("formatEncontroDate formata pt-BR e tolera inválido", () => {
+    expect(formatEncontroDate("2026-11-18T15:07:00")).toMatch(/18\/11\/2026/);
+    expect(formatEncontroDate(null)).toBeNull();
+    expect(formatEncontroDate("lixo")).toBeNull();
+  });
+  it("googleCalendarUrl monta o link do Google Agenda", () => {
+    const url = googleCalendarUrl({ titulo: "Café", scheduledAt: "2026-11-18T15:07:00", local: "Centro", nota: "oi" });
+    expect(url).toContain("calendar.google.com/calendar/render");
+    expect(url).toContain("action=TEMPLATE");
+    expect(url).toContain("dates=");
+    expect(decodeURIComponent(url)).toContain("Café");
+    expect(googleCalendarUrl({ scheduledAt: null })).toBeNull();
+  });
+  it("normalizeEncontro agendado traz dateTime, status e googleUrl", () => {
+    const n = normalizeEncontro({ id: "sched-3", tipo: "agendado", titulo: "Café", data_encontro: "2026-11-18T15:07:00", local: "Centro", matchId: 5, fotos: [] });
+    expect(n.status).toBe("Agendado");
+    expect(n.dateTime).toMatch(/18\/11\/2026/);
+    expect(n.googleUrl).toContain("calendar.google.com");
   });
 });

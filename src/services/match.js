@@ -9,16 +9,52 @@ import { resolveMediaUrl } from "../utils/mediaUrl";
 // /api/matches não existe → 404). Devolve matches + encontros agendados,
 // no formato: { id, titulo, matchName, matchId (conversa), fotos:[url], local, tipo }.
 // Normalizamos para o que a tela de Encontros consome.
+// Data/hora formatada (pt-BR) ou null.
+export function formatEncontroDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+}
+
+// Link do Google Agenda para um encontro agendado (abre o formulário pré-preenchido).
+export function googleCalendarUrl({ titulo, scheduledAt, local, nota }) {
+  if (!scheduledAt) return null;
+  const start = new Date(scheduledAt);
+  if (Number.isNaN(start.getTime())) return null;
+  const end = new Date(start.getTime() + 60 * 60 * 1000); // +1h
+  const fmt = (d) =>
+    `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}T${String(d.getUTCHours()).padStart(2, "0")}${String(d.getUTCMinutes()).padStart(2, "0")}00Z`;
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: titulo || "Encontro",
+    dates: `${fmt(start)}/${fmt(end)}`,
+    details: nota || "",
+    location: local || "",
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
 export function normalizeEncontro(ev = {}) {
   const foto = Array.isArray(ev.fotos) ? ev.fotos.find(Boolean) : null;
+  const tipo = ev.tipo || "match";
+  const agendado = tipo === "agendado";
+  const dateTime = agendado ? formatEncontroDate(ev.data_encontro) : null;
   return {
     id: ev.id, // 'match-<uuid>' | 'sched-<n>'
     rawId: String(ev.id ?? "").replace(/^(match|sched)-/, ""),
-    tipo: ev.tipo || "match",
+    tipo,
     name: ev.matchName || ev.titulo || "Encontro",
+    titulo: ev.titulo || null,
     photo: resolveMediaUrl(foto) || null, // Cloudinary; Avatar faz fallback de iniciais
-    subtitle: ev.local || "A combinar via chat",
+    local: ev.local || (agendado ? null : "A combinar via chat"),
+    dateTime,
+    status: agendado ? "Agendado" : "A combinar",
+    subtitle: ev.local || (agendado ? dateTime || "Encontro agendado" : "A combinar via chat"),
     conversationId: ev.matchId ?? null,
+    googleUrl: agendado
+      ? googleCalendarUrl({ titulo: ev.titulo, scheduledAt: ev.data_encontro, local: ev.local, nota: ev.nota })
+      : null,
   };
 }
 

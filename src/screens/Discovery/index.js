@@ -302,12 +302,25 @@ export default function Discovery({ navigation }) {
           <View style={styles.brandCenter} pointerEvents="none">
             <Image testID="discovery-brand" source={require("../../../assets/logo-chama.png")} style={styles.brandLogo} resizeMode="contain" />
           </View>
-          <TouchableOpacity testID="btn-filters" onPress={openFilters} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Abrir filtros de busca">
-            <BlurView intensity={55} tint="dark" style={styles.pill}>
-              <Ionicons name="options" size={16} color="#fff" />
-              <Text style={styles.pillText} numberOfLines={1}>{shortFilterLabel(prefs)}</Text>
-            </BlurView>
-          </TouchableOpacity>
+          <View style={styles.topRight}>
+            <TouchableOpacity
+              testID="btn-encontros"
+              onPress={() => navigation?.navigate?.("Encontros")}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir meus encontros"
+            >
+              <BlurView intensity={55} tint="dark" style={styles.pillIcon}>
+                <Ionicons name="calendar" size={18} color="#fff" />
+              </BlurView>
+            </TouchableOpacity>
+            <TouchableOpacity testID="btn-filters" onPress={openFilters} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Abrir filtros de busca">
+              <BlurView intensity={55} tint="dark" style={styles.pill}>
+                <Ionicons name="options" size={16} color="#fff" />
+                <Text style={styles.pillText} numberOfLines={1}>{shortFilterLabel(prefs)}</Text>
+              </BlurView>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.cardArea}>
@@ -527,6 +540,12 @@ const styles = StyleSheet.create({
   avatar: { width: "100%", height: "100%", borderRadius: 20 },
   brandCenter: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center", zIndex: 1 },
   brandLogo: { width: 72, height: 48 },
+  topRight: { flexDirection: "row", alignItems: "center", columnGap: 8 },
+  pillIcon: {
+    width: 40, height: 40, borderRadius: 20, overflow: "hidden",
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.25)",
+  },
   pill: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 132, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.85)", backgroundColor: "rgba(42,10,85,0.45)", zIndex: 2, flexShrink: 1 },
   pillText: { fontSize: 12, fontWeight: "700", color: "#fff", flexShrink: 1 },
   cardArea: { flex: 1, justifyContent: "center", paddingVertical: 12, overflow: "hidden" },

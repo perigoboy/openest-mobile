@@ -277,3 +277,11 @@ describe("Discovery — avatar do topo (foto real do usuário)", () => {
     expect(temFotoFixa).toBe(false);
   });
 });
+
+describe("Discovery — atalho de Encontros", () => {
+  it("botão de calendário abre a tela de Encontros", async () => {
+    const { navigation } = await renderDiscovery();
+    fireEvent.press(screen.getByTestId("btn-encontros"));
+    expect(navigation.navigate).toHaveBeenCalledWith("Encontros");
+  });
+});

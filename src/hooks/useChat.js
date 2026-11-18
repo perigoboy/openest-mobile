@@ -25,9 +25,12 @@ import {
   sendMessageRest,
 } from "../services/messages";
 import { getHiddenMessageIds, hideMessageForMe as persistHiddenMessage } from "../services/hiddenMessages";
+import { createEvent, respondInvite } from "../services/events";
 import { getFriendlyErrorMessage } from "../services/networkErrors";
 import {
   MESSAGE_STATUS,
+  applyInviteResponse,
+  buildInviteMessage,
   confirmPendingMessage,
   createPendingImageMessage,
   createPendingMessage,
@@ -125,6 +128,10 @@ export function useChat(conversationId, currentUserId) {
     const handleDeleted = (messageId) => {
       setMessages((list) => markMessageDeleted(list, messageId));
     };
+    const handleInviteUpdated = (payload) => {
+      if (!payload?.messageId) return;
+      setMessages((list) => applyInviteResponse(list, payload.messageId, payload.status));
+    };
     const handleUserTyping = (payload) => {
       // O servidor só repassa para os OUTROS da sala, mas o web antigo pode
       // ecoar: ignora o próprio usuário por garantia.
@@ -141,6 +148,7 @@ export function useChat(conversationId, currentUserId) {
     socket.on("disconnect", handleDisconnect);
     socket.on(SOCKET_EVENTS.NEW_MESSAGE, handleNewMessage);
     socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleDeleted);
+    socket.on(SOCKET_EVENTS.INVITE_UPDATED, handleInviteUpdated);
     socket.on(SOCKET_EVENTS.USER_TYPING, handleUserTyping);
 
     setConnected(socket.connected);
@@ -151,6 +159,7 @@ export function useChat(conversationId, currentUserId) {
       socket.off("disconnect", handleDisconnect);
       socket.off(SOCKET_EVENTS.NEW_MESSAGE, handleNewMessage);
       socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleDeleted);
+      socket.off(SOCKET_EVENTS.INVITE_UPDATED, handleInviteUpdated);
       socket.off(SOCKET_EVENTS.USER_TYPING, handleUserTyping);
       clearTimeout(otherTypingTimer.current);
       clearTimeout(typingIdleTimer.current);
@@ -280,6 +289,44 @@ export function useChat(conversationId, currentUserId) {
     [deliver]
   );
 
+  // Convite de encontro: enviado como uma mensagem [CONVITE_EVENTO] (mesmo
+  // formato do web), aparecendo como card no balão.
+  const sendInvite = useCallback(
+    (payload) => {
+      if (!hasConversation) return Promise.resolve(false);
+      return sendMessage(buildInviteMessage({ ...payload, conversation_id: payload?.conversation_id ?? conversationId }));
+    },
+    [sendMessage, hasConversation, conversationId]
+  );
+
+  // Aceitar/recusar um convite recebido. `otherUserId` = quem enviou (contato
+  // do chat), usado para criar o encontro agendado no lado de quem aceita.
+  const respondToInvite = useCallback(
+    async (message, accept, otherUserId) => {
+      if (!message?.invite) return false;
+      const resposta = accept ? "aceite" : "recusado";
+      setMessages((list) => applyInviteResponse(list, message.id, resposta)); // otimista
+      try {
+        if (accept) {
+          await createEvent({
+            conversation_id: message.invite.conversation_id ?? conversationId,
+            other_user_id: otherUserId ?? message.invite.other_user_id,
+            titulo: message.invite.titulo,
+            scheduled_at: message.invite.scheduled_at,
+            local: message.invite.local || "",
+            nota: message.invite.nota || "",
+          });
+        }
+        await respondInvite(message.id, resposta);
+        return true;
+      } catch (err) {
+        console.error("Erro ao responder convite:", err?.response?.data || err?.message || err);
+        return false;
+      }
+    },
+    [conversationId]
+  );
+
   // Apagar p/ TODOS (só mensagens próprias já salvas): marca apagada na hora e
   // chama a API; o outro lado recebe via socket `message_deleted`.
   const deleteForEveryone = useCallback(async (message) => {
@@ -316,6 +363,8 @@ export function useChat(conversationId, currentUserId) {
     notifyTyping,
     sendMessage,
     sendImage,
+    sendInvite,
+    respondToInvite,
     retryMessage,
     deleteForEveryone,
     hideForMe,
