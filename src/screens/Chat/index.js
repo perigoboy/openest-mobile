@@ -29,6 +29,7 @@ import {
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../hooks/useChat";
 import { MESSAGE_STATUS } from "../../utils/chatMessages";
+import { resolveMediaUrl } from "../../utils/mediaUrl";
 
 const DEFAULT_CONTACT_NAME = "Conversa";
 
@@ -60,7 +61,7 @@ function MessageBubble({ message, imageSize, onRetry }) {
     >
       {message.isImage ? (
         <Image
-          source={{ uri: message.text }}
+          source={{ uri: resolveMediaUrl(message.text) || message.text }}
           style={[styles.messageImage, { width: imageSize, height: imageSize }]}
           accessibilityLabel="Imagem enviada na conversa"
         />

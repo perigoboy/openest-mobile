@@ -1,11 +1,17 @@
 import api from "./api";
+import { resolveMediaUrl } from "../utils/mediaUrl";
 
 export async function fetchConversations() {
   const { data } = await api.get("/api/conversas");
   if (!Array.isArray(data)) {
     throw new Error("A resposta da lista de conversas está em um formato inválido.");
   }
-  return data;
+  // Foto do contato acessível também pelo celular (ver utils/mediaUrl).
+  return data.map((conversation) =>
+    conversation && conversation.img
+      ? { ...conversation, img: resolveMediaUrl(conversation.img) || conversation.img }
+      : conversation
+  );
 }
 
 function toContact(conversation) {
