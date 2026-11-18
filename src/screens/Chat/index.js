@@ -9,6 +9,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   StyleSheet,
   Text,
@@ -18,7 +19,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { Avatar, Input } from "../../components";
+import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
+import * as Clipboard from "expo-clipboard";
+import { Avatar, Input, useToast } from "../../components";
+import GifPickerModal from "../../components/GifPickerModal";
+import AttachmentMenu from "../../components/AttachmentMenu";
 import { colors, radius, spacing, typography } from "../../styles/theme";
 import { blockUser } from "../../services/block";
 import { findConversationContact, findConversationWithUser } from "../../services/conversations";
@@ -32,6 +38,7 @@ import { MESSAGE_STATUS } from "../../utils/chatMessages";
 import { resolveMediaUrl } from "../../utils/mediaUrl";
 
 const DEFAULT_CONTACT_NAME = "Conversa";
+const DELETED_TEXT = "🚫 Mensagem apagada";
 
 function MessageStatusIcon({ status }) {
   if (status === MESSAGE_STATUS.PENDING) {
@@ -49,8 +56,60 @@ function MessageStatusIcon({ status }) {
   );
 }
 
-function MessageBubble({ message, imageSize, onRetry }) {
+function ReplyQuote({ replyTo }) {
+  if (!replyTo?.content) return null;
+  return (
+    <View style={styles.quote}>
+      <Text style={styles.quoteSender} numberOfLines={1}>
+        {replyTo.sender === "Você" ? "Você" : replyTo.sender || "Mensagem"}
+      </Text>
+      <Text style={styles.quoteText} numberOfLines={1}>{replyTo.content}</Text>
+    </View>
+  );
+}
+
+function LocationCard({ location }) {
+  return (
+    <TouchableOpacity
+      testID="chat-location-card"
+      style={styles.locationCard}
+      activeOpacity={0.8}
+      onPress={() => location.mapsUrl && Linking.openURL(location.mapsUrl)}
+      accessibilityRole="button"
+      accessibilityLabel="Abrir localização no mapa"
+    >
+      <View style={styles.locationIcon}>
+        <Ionicons name="location" size={20} color={colors.white} />
+      </View>
+      <View style={styles.locationTexts}>
+        <Text style={styles.locationTitle}>Localização partilhada</Text>
+        <Text style={styles.locationLink}>Ver no mapa</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function MessageBubble({ message, imageSize, onRetry, onLongPress }) {
   const failed = message.status === MESSAGE_STATUS.FAILED;
+  const deleted = message.text === DELETED_TEXT;
+
+  let content;
+  if (deleted) {
+    content = <Text style={[styles.messageText, styles.deletedText]}>{message.text}</Text>;
+  } else if (message.isImage) {
+    content = (
+      <Image
+        source={{ uri: resolveMediaUrl(message.text) || message.text }}
+        style={[styles.messageImage, { width: imageSize, height: imageSize }]}
+        accessibilityLabel="Imagem enviada na conversa"
+      />
+    );
+  } else if (message.location) {
+    content = <LocationCard location={message.location} />;
+  } else {
+    content = <Text style={styles.messageText}>{message.text}</Text>;
+  }
+
   const bubble = (
     <View
       style={[
@@ -59,15 +118,8 @@ function MessageBubble({ message, imageSize, onRetry }) {
         failed && styles.failedMessage,
       ]}
     >
-      {message.isImage ? (
-        <Image
-          source={{ uri: resolveMediaUrl(message.text) || message.text }}
-          style={[styles.messageImage, { width: imageSize, height: imageSize }]}
-          accessibilityLabel="Imagem enviada na conversa"
-        />
-      ) : (
-        <Text style={styles.messageText}>{message.text}</Text>
-      )}
+      {!deleted ? <ReplyQuote replyTo={message.replyTo} /> : null}
+      {content}
       <View style={styles.messageMeta}>
         <Text style={[styles.messageTime, message.isMine && styles.myMessageTime]}>{message.time}</Text>
         {message.isMine ? <MessageStatusIcon status={message.status} /> : null}
@@ -81,19 +133,21 @@ function MessageBubble({ message, imageSize, onRetry }) {
       testID={`chat-message-${message.id}`}
       style={[styles.messageRow, message.isMine ? styles.myMessageRow : styles.theirMessageRow]}
     >
-      {failed ? (
-        <TouchableOpacity
-          testID={`chat-retry-${message.id}`}
-          onPress={() => onRetry(message)}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Mensagem não enviada. Toque para tentar de novo"
-        >
-          {bubble}
-        </TouchableOpacity>
-      ) : (
-        bubble
-      )}
+      <TouchableOpacity
+        testID={`chat-message-touch-${message.id}`}
+        onPress={failed ? () => onRetry(message) : undefined}
+        onLongPress={() => onLongPress(message)}
+        delayLongPress={250}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={
+          failed
+            ? "Mensagem não enviada. Toque para tentar de novo"
+            : "Segure para ações da mensagem"
+        }
+      >
+        {bubble}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -105,8 +159,12 @@ export default function Chat({ navigation, route }) {
   const paramContactId = paramContact.id ?? null;
   const paramContactName = paramContact.name || params.name || null;
   const { user } = useAuth();
+  const toast = useToast();
   const { width } = useWindowDimensions();
   const imageSize = Math.round(Math.min(240, width * 0.6));
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [gifOpen, setGifOpen] = useState(false);
+  const [replyTo, setReplyTo] = useState(null);
 
   // T049 — aberto por notificação: veio só o id da conversa → busca o contato.
   const needsContactLookup = paramConversationId != null && (!paramContactName || paramContactId == null);
@@ -132,7 +190,10 @@ export default function Chat({ navigation, route }) {
     otherTyping,
     notifyTyping,
     sendMessage,
+    sendImage,
     retryMessage,
+    deleteForEveryone,
+    hideForMe,
     reload,
   } = useChat(conversationId, user?.id);
 
@@ -190,7 +251,99 @@ export default function Chat({ navigation, route }) {
     const text = draft.trim();
     if (!text || !conversationId) return;
     setDraft("");
-    sendMessage(text);
+    sendMessage(text, replyTo);
+    setReplyTo(null);
+  }
+
+  // ── Menu de anexos (+) ────────────────────────────────────────────────
+  function handleAttachSelect(key) {
+    setAttachOpen(false);
+    if (key === "photo") handleAttachPhoto();
+    else if (key === "location") handleShareLocation();
+    else if (key === "gif") setGifOpen(true);
+  }
+
+  function handleAttachPhoto() {
+    Alert.alert("Enviar foto", undefined, [
+      { text: "Tirar foto", onPress: () => pickImage("camera") },
+      { text: "Escolher da galeria", onPress: () => pickImage("library") },
+      { text: "Cancelar", style: "cancel" },
+    ]);
+  }
+
+  async function pickImage(source) {
+    try {
+      const permission =
+        source === "camera"
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permission?.status !== "granted") {
+        Alert.alert("Permissão necessária", "Precisamos de acesso para enviar a foto.");
+        return;
+      }
+      const result =
+        source === "camera"
+          ? await ImagePicker.launchCameraAsync({ quality: 0.7 })
+          : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7 });
+      if (result?.canceled) return;
+      const asset = result?.assets?.[0];
+      if (asset?.uri) sendImage(asset);
+    } catch (err) {
+      console.error("Erro ao selecionar imagem:", err?.message || err);
+      Alert.alert("Erro", "Não foi possível selecionar a imagem.");
+    }
+  }
+
+  async function handleShareLocation() {
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission?.status !== "granted") {
+        Alert.alert("Permissão necessária", "Ative a localização para partilhar.");
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = position.coords;
+      // Mesmo formato do web (handleLocation).
+      const text = `📍 Localização partilhada:\nhttp://maps.google.com/maps?q=${latitude},${longitude}`;
+      sendMessage(text, replyTo);
+      setReplyTo(null);
+    } catch (err) {
+      console.error("Erro ao obter localização:", err?.message || err);
+      Alert.alert("Erro", "Não foi possível obter a sua localização.");
+    }
+  }
+
+  function handleSelectGif(url) {
+    setGifOpen(false);
+    sendMessage(url, replyTo);
+    setReplyTo(null);
+  }
+
+  // ── Menu de ações da mensagem (long press) ────────────────────────────
+  function handleMessageLongPress(message) {
+    if (!message || String(message.id).startsWith("temp-")) return;
+    const deleted = message.text === DELETED_TEXT;
+    const buttons = [];
+    if (!deleted && !message.isImage) {
+      buttons.push({ text: "↩️ Responder", onPress: () => setReplyTo(message) });
+      buttons.push({ text: "📋 Copiar", onPress: () => handleCopy(message) });
+    }
+    buttons.push({ text: "🗑️ Apagar p/ mim", style: "destructive", onPress: () => hideForMe(message) });
+    if (message.isMine && !deleted) {
+      buttons.push({ text: "🗑️ Apagar p/ todos", style: "destructive", onPress: () => deleteForEveryone(message) });
+    }
+    buttons.push({ text: "Cancelar", style: "cancel" });
+    Alert.alert("Mensagem", undefined, buttons, { cancelable: true });
+  }
+
+  async function handleCopy(message) {
+    try {
+      await Clipboard.setStringAsync(message.text);
+      toast.show("Mensagem copiada", { type: "success" });
+    } catch (err) {
+      console.error("Erro ao copiar:", err?.message || err);
+      toast.show("Não foi possível copiar", { type: "error" });
+    }
   }
 
   // T037 — Bloquear usuário a partir da tela de Chat.
@@ -237,7 +390,12 @@ export default function Chat({ navigation, route }) {
           inverted
           keyExtractor={(message) => message.id}
           renderItem={({ item }) => (
-            <MessageBubble message={item} imageSize={imageSize} onRetry={retryMessage} />
+            <MessageBubble
+              message={item}
+              imageSize={imageSize}
+              onRetry={retryMessage}
+              onLongPress={handleMessageLongPress}
+            />
           )}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
@@ -341,7 +499,42 @@ export default function Chat({ navigation, route }) {
 
         {renderBody()}
 
+        {/* Barra de resposta (citação) acima do campo, com X para cancelar */}
+        {replyTo ? (
+          <View style={styles.replyBanner} testID="chat-reply-banner">
+            <View style={styles.replyBar} />
+            <View style={styles.replyContent}>
+              <Text style={styles.replySender} numberOfLines={1}>
+                Respondendo {replyTo.isMine ? "a você" : contactName}
+              </Text>
+              <Text style={styles.replyPreview} numberOfLines={1}>
+                {replyTo.isImage ? "📷 Foto" : replyTo.text}
+              </Text>
+            </View>
+            <TouchableOpacity
+              testID="chat-reply-cancel"
+              onPress={() => setReplyTo(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Cancelar resposta"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="close" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.composer}>
+          <TouchableOpacity
+            testID="chat-attach-button"
+            style={styles.attachButton}
+            onPress={() => setAttachOpen(true)}
+            disabled={!conversationId}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Anexar foto, localização ou GIF"
+          >
+            <Ionicons name="add" size={24} color={colors.primaryLight} />
+          </TouchableOpacity>
           <Input
             testID="chat-message-input"
             accessibilityLabel="Mensagem"
@@ -368,6 +561,13 @@ export default function Chat({ navigation, route }) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <AttachmentMenu
+        visible={attachOpen}
+        onClose={() => setAttachOpen(false)}
+        onSelect={handleAttachSelect}
+      />
+      <GifPickerModal visible={gifOpen} onClose={() => setGifOpen(false)} onSelect={handleSelectGif} />
     </SafeAreaView>
   );
 }
@@ -547,5 +747,89 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     opacity: 0.5,
+  },
+  attachButton: {
+    width: 40,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // Citação (responder) dentro do balão
+  quote: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primaryLight,
+    paddingLeft: spacing.sm,
+    marginBottom: spacing.xs,
+    opacity: 0.9,
+  },
+  quoteSender: {
+    ...typography.caption,
+    fontWeight: "700",
+    color: colors.primaryLight,
+  },
+  quoteText: {
+    ...typography.caption,
+    color: colors.text,
+  },
+  deletedText: {
+    fontStyle: "italic",
+    color: colors.textMuted,
+  },
+  // Card de localização
+  locationCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  locationIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  locationTexts: {
+    flex: 1,
+  },
+  locationTitle: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: "600",
+  },
+  locationLink: {
+    ...typography.caption,
+    color: colors.primaryLight,
+    marginTop: 1,
+  },
+  // Barra de resposta acima do campo
+  replyBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  replyBar: {
+    width: 3,
+    alignSelf: "stretch",
+    borderRadius: 2,
+    backgroundColor: colors.primaryLight,
+  },
+  replyContent: {
+    flex: 1,
+  },
+  replySender: {
+    ...typography.caption,
+    fontWeight: "700",
+    color: colors.primaryLight,
+  },
+  replyPreview: {
+    ...typography.caption,
+    color: colors.textMuted,
   },
 });

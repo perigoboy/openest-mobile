@@ -18,11 +18,18 @@ import {
   getSocket,
   isSocketConnected,
 } from "../services/socket";
-import { fetchMessages, sendMessageRest } from "../services/messages";
+import {
+  deleteMessageForEveryone,
+  fetchMessages,
+  sendChatImage,
+  sendMessageRest,
+} from "../services/messages";
+import { getHiddenMessageIds, hideMessageForMe as persistHiddenMessage } from "../services/hiddenMessages";
 import { getFriendlyErrorMessage } from "../services/networkErrors";
 import {
   MESSAGE_STATUS,
   confirmPendingMessage,
+  createPendingImageMessage,
   createPendingMessage,
   markMessageDeleted,
   mergeHistory,
@@ -49,6 +56,8 @@ export function useChat(conversationId, currentUserId) {
   const tempCounter = useRef(0);
   const mounted = useRef(true);
   const historyRequest = useRef(0);
+  // "Apagar p/ mim": ids escondidos só para este usuário (como o web).
+  const hiddenIds = useRef(new Set());
   // Conversa "atual": respostas que chegam depois de trocar de conversa são
   // descartadas, para não misturar mensagens de chats diferentes.
   const currentConversation = useRef(conversationId);
@@ -70,9 +79,13 @@ export function useChat(conversationId, currentUserId) {
     setLoading(true);
     setError(null);
     try {
-      const { messages: raw } = await fetchMessages(conversationId);
+      const [{ messages: raw }, hidden] = await Promise.all([
+        fetchMessages(conversationId),
+        getHiddenMessageIds(currentUserId),
+      ]);
       if (isStale()) return;
-      const history = normalizeMessageList(raw, currentUserId);
+      hiddenIds.current = new Set(hidden);
+      const history = normalizeMessageList(raw, currentUserId).filter((m) => !hiddenIds.current.has(m.id));
       setMessages((current) => mergeHistory(current, history));
     } catch (err) {
       if (isStale()) return;
@@ -106,6 +119,7 @@ export function useChat(conversationId, currentUserId) {
     const handleDisconnect = () => setConnected(false);
     const handleNewMessage = (raw) => {
       if (String(raw?.conversation_id) !== String(conversationId)) return;
+      if (raw?.id != null && hiddenIds.current.has(String(raw.id))) return; // oculta p/ mim
       setMessages((list) => mergeIncomingMessage(list, raw, currentUserId));
     };
     const handleDeleted = (messageId) => {
@@ -213,17 +227,48 @@ export function useChat(conversationId, currentUserId) {
     [conversationId, currentUserId]
   );
 
+  const nextTempId = useCallback(() => {
+    tempCounter.current += 1;
+    return `temp-${Date.now()}-${tempCounter.current}`;
+  }, []);
+
+  // `replyTo` (opcional) = mensagem citada. Fica só na bolha local (o backend
+  // não persiste a citação — igual ao web).
   const sendMessage = useCallback(
-    (rawText) => {
+    (rawText, replyTo = null) => {
       const text = String(rawText || "").trim();
       if (!text || !hasConversation) return Promise.resolve(false);
       stopTyping();
-      tempCounter.current += 1;
-      const tempId = `temp-${Date.now()}-${tempCounter.current}`;
-      setMessages((list) => [createPendingMessage(tempId, text), ...list]);
+      const tempId = nextTempId();
+      const quote = replyTo
+        ? { content: replyTo.text ?? replyTo.content, sender: replyTo.isMine ? "Você" : (replyTo.sender || null) }
+        : null;
+      setMessages((list) => [createPendingMessage(tempId, text, { replyTo: quote }), ...list]);
       return deliver(tempId, text);
     },
-    [deliver, hasConversation, stopTyping]
+    [deliver, hasConversation, stopTyping, nextTempId]
+  );
+
+  // Anexo de FOTO: bolha otimista com a prévia local → upload (Cloudinary) →
+  // confirma com a URL salva. O backend emite new_message para o outro lado.
+  const sendImage = useCallback(
+    async (asset) => {
+      if (!asset?.uri || !hasConversation) return false;
+      const sentTo = conversationId;
+      const stillHere = () => mounted.current && String(currentConversation.current) === String(sentTo);
+      const tempId = nextTempId();
+      setMessages((list) => [createPendingImageMessage(tempId, asset.uri), ...list]);
+      try {
+        const saved = await sendChatImage(conversationId, asset);
+        if (stillHere()) setMessages((list) => confirmPendingMessage(list, tempId, saved, currentUserId));
+        return true;
+      } catch (err) {
+        console.error("Erro ao enviar imagem:", err?.message || err);
+        if (stillHere()) setMessages((list) => setMessageStatus(list, tempId, MESSAGE_STATUS.FAILED));
+        return false;
+      }
+    },
+    [conversationId, currentUserId, hasConversation, nextTempId]
   );
 
   const retryMessage = useCallback(
@@ -235,6 +280,33 @@ export function useChat(conversationId, currentUserId) {
     [deliver]
   );
 
+  // Apagar p/ TODOS (só mensagens próprias já salvas): marca apagada na hora e
+  // chama a API; o outro lado recebe via socket `message_deleted`.
+  const deleteForEveryone = useCallback(async (message) => {
+    if (!message || String(message.id).startsWith("temp-")) return false;
+    setMessages((list) => markMessageDeleted(list, message.id));
+    try {
+      await deleteMessageForEveryone(message.id);
+      return true;
+    } catch (err) {
+      console.error("Erro ao apagar mensagem:", err?.message || err);
+      return false;
+    }
+  }, []);
+
+  // Apagar p/ MIM: só esconde localmente (sem API), igual ao web.
+  const hideForMe = useCallback(
+    async (message) => {
+      if (!message) return false;
+      const id = String(message.id);
+      hiddenIds.current.add(id);
+      setMessages((list) => list.filter((m) => m.id !== id));
+      if (!id.startsWith("temp-")) await persistHiddenMessage(currentUserId, id);
+      return true;
+    },
+    [currentUserId]
+  );
+
   return {
     messages,
     loading,
@@ -243,7 +315,10 @@ export function useChat(conversationId, currentUserId) {
     otherTyping,
     notifyTyping,
     sendMessage,
+    sendImage,
     retryMessage,
+    deleteForEveryone,
+    hideForMe,
     reload: loadHistory,
   };
 }

@@ -18,6 +18,31 @@ export const MESSAGE_STATUS = {
 };
 
 const IMAGE_URL = /^https?:\/\/\S+\.(png|jpe?g|gif|webp|heic)(\?\S*)?$/i;
+// GIF do Giphy/Tenor (nem sempre termina em .gif) também conta como imagem.
+const GIF_HOST = /^https?:\/\/\S*(giphy\.com|tenor\.com|media\d*\.giphy)/i;
+// Localização partilhada (mesmo texto que o web monta no handleLocation).
+const MAPS_URL = /https?:\/\/(?:maps\.google\.com|www\.google\.com\/maps|maps\.app\.goo\.gl|goo\.gl\/maps)\S*/i;
+const MAPS_COORDS = /[?&]q=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/;
+
+export function isImageContent(text = "") {
+  const value = String(text).trim();
+  return IMAGE_URL.test(value) || GIF_HOST.test(value) || value.includes("res.cloudinary.com");
+}
+
+// Detecta "📍 Localização partilhada" + link do Maps e extrai a URL/coords.
+export function parseLocationMessage(text = "") {
+  const value = String(text);
+  if (!value.includes("📍") && !MAPS_URL.test(value)) return null;
+  const urlMatch = value.match(MAPS_URL);
+  if (!urlMatch) return null;
+  const mapsUrl = urlMatch[0];
+  const coords = mapsUrl.match(MAPS_COORDS);
+  return {
+    mapsUrl,
+    latitude: coords ? Number(coords[1]) : null,
+    longitude: coords ? Number(coords[2]) : null,
+  };
+}
 
 export function formatMessageTime(value) {
   const date = value ? new Date(value) : null;
@@ -33,13 +58,19 @@ export function normalizeMessage(raw, currentUserId) {
   if (!raw || raw.id == null) return null;
   const text = typeof raw.content === "string" ? raw.content : "";
   const createdAt = raw.createdAt || raw.created_at || null;
+  const isImage = isImageContent(text);
   return {
     id: String(raw.id),
     text,
     time: formatMessageTime(createdAt),
     createdAt,
     isMine: currentUserId != null && String(raw.sender_id) === String(currentUserId),
-    isImage: IMAGE_URL.test(text.trim()),
+    isImage,
+    location: isImage ? null : parseLocationMessage(text),
+    // Citação da resposta (local; o backend não persiste — igual ao web).
+    replyTo: raw.reply_to_content
+      ? { content: raw.reply_to_content, sender: raw.reply_to_sender || null }
+      : null,
     status: MESSAGE_STATUS.SENT,
   };
 }
@@ -57,14 +88,32 @@ export function normalizeMessageList(rawList, currentUserId) {
   return result;
 }
 
-export function createPendingMessage(tempId, text, now = new Date()) {
+export function createPendingMessage(tempId, text, { replyTo = null, now = new Date() } = {}) {
   return {
     id: tempId,
     text,
     time: formatMessageTime(now),
     createdAt: now.toISOString(),
     isMine: true,
-    isImage: false,
+    isImage: isImageContent(text),
+    location: parseLocationMessage(text),
+    replyTo,
+    status: MESSAGE_STATUS.PENDING,
+  };
+}
+
+// Bolha otimista de IMAGEM: mostra a prévia local (uri do device) enquanto o
+// upload ao Cloudinary não volta.
+export function createPendingImageMessage(tempId, localUri, now = new Date()) {
+  return {
+    id: tempId,
+    text: localUri,
+    time: formatMessageTime(now),
+    createdAt: now.toISOString(),
+    isMine: true,
+    isImage: true,
+    location: null,
+    replyTo: null,
     status: MESSAGE_STATUS.PENDING,
   };
 }
@@ -100,6 +149,10 @@ export function mergeIncomingMessage(list, raw, currentUserId) {
 export function confirmPendingMessage(list, tempId, raw, currentUserId) {
   const saved = normalizeMessage(raw, currentUserId);
   const tempIndex = list.findIndex((m) => m.id === tempId);
+  const pending = tempIndex !== -1 ? list[tempIndex] : null;
+  // A citação da resposta é local (o backend não a devolve); preserva a da
+  // bolha otimista ao confirmar — mesmo comportamento do web.
+  const merged = saved && pending ? { ...saved, replyTo: saved.replyTo || pending.replyTo || null } : saved;
 
   if (!saved) {
     // Servidor confirmou sem devolver a mensagem: só tira o "enviando".
@@ -118,7 +171,7 @@ export function confirmPendingMessage(list, tempId, raw, currentUserId) {
     return list.filter((m) => m.id !== tempId);
   }
   const next = list.slice();
-  next[tempIndex] = saved;
+  next[tempIndex] = merged;
   return next;
 }
 

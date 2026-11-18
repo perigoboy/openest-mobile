@@ -124,7 +124,7 @@ describe("status e exclusão", () => {
 describe("mergeHistory", () => {
   it("mantém o que chegou pelo socket durante o carregamento e ordena do mais novo ao mais antigo", () => {
     const live = normalizeMessage({ id: 30, content: "ao vivo", createdAt: "2026-11-17T12:00:00Z" }, ME);
-    const pending = createPendingMessage("t1", "enviando", new Date("2026-11-17T11:00:00Z"));
+    const pending = createPendingMessage("t1", "enviando", { now: new Date("2026-11-17T11:00:00Z") });
     const history = normalizeMessageList(
       [
         { id: 20, content: "b", createdAt: "2026-11-17T10:00:00Z" },
@@ -140,5 +140,71 @@ describe("mergeHistory", () => {
   it("não duplica mensagens que estão nos dois lados", () => {
     const history = normalizeMessageList([{ id: 1, content: "a" }], ME);
     expect(mergeHistory(history, history)).toHaveLength(1);
+  });
+});
+
+import {
+  isImageContent,
+  parseLocationMessage,
+  createPendingImageMessage,
+} from "../../src/utils/chatMessages";
+
+describe("isImageContent", () => {
+  it("detecta Cloudinary, extensões de imagem e GIFs do Giphy/Tenor", () => {
+    expect(isImageContent("https://res.cloudinary.com/x/a")).toBe(true);
+    expect(isImageContent("https://cdn.x/a.jpg")).toBe(true);
+    expect(isImageContent("https://media.giphy.com/media/abc/giphy.gif")).toBe(true);
+    expect(isImageContent("https://tenor.com/view/abc.gif")).toBe(true);
+    expect(isImageContent("só um texto")).toBe(false);
+    expect(isImageContent("")).toBe(false);
+  });
+});
+
+describe("parseLocationMessage", () => {
+  it("extrai a URL e as coordenadas do formato do web", () => {
+    const loc = parseLocationMessage("📍 Localização partilhada:\nhttp://maps.google.com/maps?q=-3.73,-38.52");
+    expect(loc).toMatchObject({ latitude: -3.73, longitude: -38.52 });
+    expect(loc.mapsUrl).toContain("maps.google.com");
+  });
+  it("devolve null para texto normal", () => {
+    expect(parseLocationMessage("oi, tudo bem?")).toBeNull();
+  });
+});
+
+describe("normalizeMessage — imagem, localização e citação", () => {
+  it("marca imagem e não confunde com localização", () => {
+    const m = normalizeMessage({ id: 1, content: "https://res.cloudinary.com/x/a.jpg" }, ME);
+    expect(m.isImage).toBe(true);
+    expect(m.location).toBeNull();
+  });
+  it("preenche location para mensagem de localização", () => {
+    const m = normalizeMessage({ id: 2, content: "📍 Localização partilhada:\nhttp://maps.google.com/maps?q=1,2" }, ME);
+    expect(m.isImage).toBe(false);
+    expect(m.location).toMatchObject({ latitude: 1, longitude: 2 });
+  });
+  it("lê a citação de resposta quando presente", () => {
+    const m = normalizeMessage({ id: 3, content: "resposta", reply_to_content: "original", reply_to_sender: "Você" }, ME);
+    expect(m.replyTo).toEqual({ content: "original", sender: "Você" });
+  });
+});
+
+describe("createPendingMessage/Image — reply e imagem otimista", () => {
+  it("carrega a citação na bolha otimista", () => {
+    const m = createPendingMessage("t1", "oi", { replyTo: { content: "cit", sender: "Você" } });
+    expect(m.replyTo).toEqual({ content: "cit", sender: "Você" });
+    expect(m.status).toBe("pending");
+  });
+  it("imagem otimista mostra a uri local", () => {
+    const m = createPendingImageMessage("t1", "file:///local/a.jpg");
+    expect(m).toMatchObject({ isImage: true, text: "file:///local/a.jpg", status: "pending" });
+  });
+});
+
+describe("confirmPendingMessage — preserva a citação local", () => {
+  it("mantém o replyTo da bolha otimista ao confirmar", () => {
+    const list = [createPendingMessage("t1", "oi", { replyTo: { content: "cit", sender: "Você" } })];
+    const next = confirmPendingMessage(list, "t1", { id: 9, sender_id: ME, content: "oi" }, ME);
+    expect(next[0]).toMatchObject({ id: "9", status: "sent" });
+    expect(next[0].replyTo).toEqual({ content: "cit", sender: "Você" });
   });
 });
