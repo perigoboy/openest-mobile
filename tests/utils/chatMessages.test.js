@@ -2,6 +2,8 @@
 // T045 — funções puras que mantêm a lista do chat sem duplicadas.
 import {
   MESSAGE_STATUS,
+  applyStatusUpdate,
+  statusFromRaw,
   confirmPendingMessage,
   createPendingMessage,
   formatMessageTime,
@@ -253,5 +255,54 @@ describe("convite de encontro", () => {
     expect(accepted[0].inviteStatus).toBe("accepted");
     const rejected = applyInviteResponse(list, "1", "recusado");
     expect(rejected[0].text).toBe("❌ Convite Recusado");
+  });
+});
+
+// --- Confirmação de envio/entrega/leitura (checks estilo WhatsApp) ---------
+describe("status de entrega/leitura", () => {
+  it("statusFromRaw lê o campo status da API", () => {
+    expect(statusFromRaw({ status: "read" })).toBe(MESSAGE_STATUS.READ);
+    expect(statusFromRaw({ status: "delivered" })).toBe(MESSAGE_STATUS.DELIVERED);
+    expect(statusFromRaw({ status: "sent" })).toBe(MESSAGE_STATUS.SENT);
+  });
+
+  it("statusFromRaw cai nos carimbos quando não vem `status` (payload antigo)", () => {
+    expect(statusFromRaw({ read_at: "2026-11-18T19:16:00Z" })).toBe(MESSAGE_STATUS.READ);
+    expect(statusFromRaw({ delivered_at: "2026-11-18T19:16:00Z" })).toBe(MESSAGE_STATUS.DELIVERED);
+    expect(statusFromRaw({})).toBe(MESSAGE_STATUS.SENT);
+  });
+
+  it("normalizeMessage traz o status vindo da API", () => {
+    const msg = normalizeMessage(
+      { id: 1, content: "oi", sender_id: "me", status: "read" },
+      "me"
+    );
+    expect(msg.status).toBe(MESSAGE_STATUS.READ);
+  });
+
+  it("applyStatusUpdate avança só as MINHAS mensagens listadas", () => {
+    const list = [
+      { id: "1", isMine: true, status: MESSAGE_STATUS.SENT },
+      { id: "2", isMine: true, status: MESSAGE_STATUS.SENT },
+      { id: "3", isMine: false, status: MESSAGE_STATUS.SENT },
+    ];
+    const out = applyStatusUpdate(list, ["1", "3"], MESSAGE_STATUS.READ);
+    expect(out[0].status).toBe(MESSAGE_STATUS.READ);
+    expect(out[1].status).toBe(MESSAGE_STATUS.SENT); // não estava na lista
+    expect(out[2].status).toBe(MESSAGE_STATUS.SENT); // recebida: sem checks
+  });
+
+  it("applyStatusUpdate nunca regride (read não volta para delivered)", () => {
+    const list = [{ id: "1", isMine: true, status: MESSAGE_STATUS.READ }];
+    const out = applyStatusUpdate(list, ["1"], MESSAGE_STATUS.DELIVERED);
+    expect(out[0].status).toBe(MESSAGE_STATUS.READ);
+  });
+
+  it("Modo Discreto: o servidor manda 'delivered' e os checks nunca ficam azuis", () => {
+    const list = [{ id: "1", isMine: true, status: MESSAGE_STATUS.SENT }];
+    // Com Modo Discreto ligado o backend emite delivered (nunca read).
+    const out = applyStatusUpdate(list, ["1"], MESSAGE_STATUS.DELIVERED);
+    expect(out[0].status).toBe(MESSAGE_STATUS.DELIVERED);
+    expect(out[0].status).not.toBe(MESSAGE_STATUS.READ);
   });
 });

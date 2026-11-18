@@ -12,10 +12,44 @@
 // vire UMA mensagem definitiva, qualquer que seja a ordem.
 
 export const MESSAGE_STATUS = {
-  SENT: "sent",
+  SENT: "sent",           // 1 check cinza
+  DELIVERED: "delivered", // 2 checks cinzas
+  READ: "read",           // 2 checks AZUIS (bloqueado pelo Modo Discreto)
   PENDING: "pending",
   FAILED: "failed",
 };
+
+// Ordem de progressão: o status nunca anda para trás.
+const STATUS_RANK = { pending: -1, sent: 0, delivered: 1, read: 2 };
+
+export function statusRank(status) {
+  return STATUS_RANK[status] != null ? STATUS_RANK[status] : 0;
+}
+
+// Status vindo da API (status | delivered_at | read_at), tolerando payloads
+// antigos que só tinham read_at.
+export function statusFromRaw(raw) {
+  if (!raw) return MESSAGE_STATUS.SENT;
+  if (raw.status && STATUS_RANK[raw.status] != null && raw.status !== MESSAGE_STATUS.PENDING) {
+    return raw.status;
+  }
+  if (raw.read_at) return MESSAGE_STATUS.READ;
+  if (raw.delivered_at) return MESSAGE_STATUS.DELIVERED;
+  return MESSAGE_STATUS.SENT;
+}
+
+// Aplica `message_status_updated` do socket. Só avança o status (nunca regride)
+// e só mexe nas mensagens que EU enviei — são as que mostram os checks.
+export function applyStatusUpdate(list, messageIds, status) {
+  if (!status) return list || [];
+  const ids = messageIds == null ? null : new Set((messageIds || []).map(String));
+  return (list || []).map((message) => {
+    if (!message.isMine) return message;
+    if (ids && !ids.has(String(message.id))) return message;
+    if (statusRank(status) <= statusRank(message.status)) return message;
+    return { ...message, status };
+  });
+}
 
 const IMAGE_URL = /^https?:\/\/\S+\.(png|jpe?g|gif|webp|heic)(\?\S*)?$/i;
 // GIF do Giphy/Tenor (nem sempre termina em .gif) também conta como imagem.
@@ -102,7 +136,7 @@ export function normalizeMessage(raw, currentUserId) {
     replyTo: raw.reply_to_content
       ? { content: raw.reply_to_content, sender: raw.reply_to_sender || null }
       : null,
-    status: MESSAGE_STATUS.SENT,
+    status: statusFromRaw(raw),
   };
 }
 

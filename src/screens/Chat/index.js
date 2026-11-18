@@ -42,19 +42,36 @@ import { resolveMediaUrl } from "../../utils/mediaUrl";
 const DEFAULT_CONTACT_NAME = "Conversa";
 const DELETED_TEXT = "🚫 Mensagem apagada";
 
+// Azul-ciano dos checks de leitura (mesmo tom do web).
+const READ_TICK_COLOR = "#38BDF8";
+const TICK_COLOR = "rgba(255,255,255,0.65)"; // cinza/branco translúcido
+
+// 1 check = enviada · 2 checks cinzas = entregue · 2 checks AZUIS = lida.
+// Os azuis só aparecem quando NINGUÉM está em Modo Discreto (regra aplicada
+// no servidor, que nunca manda status `read` nesse caso).
 function MessageStatusIcon({ status }) {
   if (status === MESSAGE_STATUS.PENDING) {
     return (
-      <Ionicons name="time-outline" size={13} color={colors.textMuted} accessibilityLabel="Enviando" />
+      <Ionicons name="time-outline" size={13} color={colors.textMuted} accessibilityLabel="Enviando" testID="tick-pending" />
     );
   }
   if (status === MESSAGE_STATUS.FAILED) {
     return (
-      <Ionicons name="alert-circle" size={14} color={colors.dangerLight} accessibilityLabel="Falha no envio" />
+      <Ionicons name="alert-circle" size={14} color={colors.dangerLight} accessibilityLabel="Falha no envio" testID="tick-failed" />
+    );
+  }
+  if (status === MESSAGE_STATUS.READ) {
+    return (
+      <Ionicons name="checkmark-done" size={14} color={READ_TICK_COLOR} accessibilityLabel="Visualizada" testID="tick-read" />
+    );
+  }
+  if (status === MESSAGE_STATUS.DELIVERED) {
+    return (
+      <Ionicons name="checkmark-done" size={14} color={TICK_COLOR} accessibilityLabel="Entregue" testID="tick-delivered" />
     );
   }
   return (
-    <Ionicons name="checkmark-done" size={14} color={colors.primaryLight} accessibilityLabel="Enviada" />
+    <Ionicons name="checkmark" size={14} color={TICK_COLOR} accessibilityLabel="Enviada" testID="tick-sent" />
   );
 }
 

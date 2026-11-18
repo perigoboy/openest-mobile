@@ -525,3 +525,42 @@ describe("Chat — agendamento de encontro", () => {
     expect(screen.queryByTestId("invite-accept")).toBeNull();
   });
 });
+
+// --- Checks de envio/entrega/leitura (estilo WhatsApp) --------------------
+describe("Chat — checks de status", () => {
+  const mine = (status) => [{ id: "1", text: "oi", time: "19:16", isMine: true, isImage: false, status }];
+
+  it("enviada: 1 check cinza", async () => {
+    mockChatState({ messages: mine("sent") });
+    renderChat();
+    await waitFor(() => expect(screen.getByTestId("tick-sent")).toBeTruthy());
+    expect(screen.queryByTestId("tick-read")).toBeNull();
+  });
+
+  it("entregue: 2 checks cinzas", async () => {
+    mockChatState({ messages: mine("delivered") });
+    renderChat();
+    await waitFor(() => expect(screen.getByTestId("tick-delivered")).toBeTruthy());
+    expect(screen.queryByTestId("tick-read")).toBeNull();
+  });
+
+  it("visualizada: 2 checks AZUIS (#38BDF8)", async () => {
+    mockChatState({ messages: mine("read") });
+    renderChat();
+    const tick = await screen.findByTestId("tick-read");
+    expect(tick).toBeTruthy();
+    // azul só aparece como estado `read`; os cinzas não são renderizados
+    expect(screen.queryByTestId("tick-delivered")).toBeNull();
+    expect(screen.queryByTestId("tick-sent")).toBeNull();
+  });
+
+  it("mensagem recebida não mostra check nenhum", async () => {
+    mockChatState({
+      messages: [{ id: "2", text: "oi", time: "19:16", isMine: false, isImage: false, status: "read" }],
+    });
+    renderChat();
+    await waitFor(() => expect(screen.getByText("oi")).toBeTruthy());
+    expect(screen.queryByTestId("tick-read")).toBeNull();
+    expect(screen.queryByTestId("tick-sent")).toBeNull();
+  });
+});

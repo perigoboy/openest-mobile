@@ -568,16 +568,18 @@ export default function Profile({ navigation }) {
                 />
               </View>
               <Text style={styles.privacyHint}>
-                Oculta seu perfil do Discovery. Seus matches e conversas
-                continuam ativos e seu nome fica oculto nas notificações de
-                mensagem. Salvo automaticamente ao tocar no switch.
+                Oculta seu perfil do Discovery e desliga a confirmação de
+                leitura: enquanto estiver ativo, nem você nem a outra pessoa
+                veem os checks azuis de "visualizada" — as mensagens param em
+                entregue (2 checks cinzas) para os dois lados. Seus matches e
+                conversas continuam ativos. Salvo automaticamente.
               </Text>
               <Text style={styles.privacyStatus}>
                 {savingPrivacy
                   ? "Salvando..."
                   : modoDiscreto
-                    ? "Ativado — perfil oculto no Discovery"
-                    : "Desativado — perfil visível no Discovery"}
+                    ? "Ativado — perfil oculto e sem confirmação de leitura"
+                    : "Desativado — perfil visível e checks azuis ativos"}
               </Text>
             </View>
 

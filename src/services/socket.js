@@ -23,6 +23,10 @@ export const SOCKET_EVENTS = {
   TYPING_START: "typing_start",
   TYPING_STOP: "typing_stop",
   USER_TYPING: "user_typing",
+  // Confirmação de entrega/leitura (checks estilo WhatsApp)
+  MARK_DELIVERED: "mark_delivered",
+  MARK_READ: "mark_read",
+  MESSAGE_STATUS_UPDATED: "message_status_updated",
 };
 
 export const SOCKET_ACK_TIMEOUT_MS = 8000;

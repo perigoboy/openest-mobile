@@ -160,7 +160,7 @@ describe("Profile — Modo Discreto (T022)", () => {
     const sw = screen.getByTestId("switch-modo-discreto");
     expect(sw.props.value).toBe(false);
     expect(
-      screen.getByText("Desativado — perfil visível no Discovery")
+      screen.getByText("Desativado — perfil visível e checks azuis ativos")
     ).toBeTruthy();
   });
 
@@ -174,7 +174,7 @@ describe("Profile — Modo Discreto (T022)", () => {
     const sw = screen.getByTestId("switch-modo-discreto");
     expect(sw.props.value).toBe(true);
     expect(
-      screen.getByText("Ativado — perfil oculto no Discovery")
+      screen.getByText("Ativado — perfil oculto e sem confirmação de leitura")
     ).toBeTruthy();
   });
 

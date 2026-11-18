@@ -30,6 +30,7 @@ import { getFriendlyErrorMessage } from "../services/networkErrors";
 import {
   MESSAGE_STATUS,
   applyInviteResponse,
+  applyStatusUpdate,
   buildInviteMessage,
   confirmPendingMessage,
   createPendingImageMessage,
@@ -114,16 +115,34 @@ export function useChat(conversationId, currentUserId) {
     const socket = getSocket();
     if (!socket) return undefined;
 
-    const join = () => socket.emit(SOCKET_EVENTS.JOIN_CONVERSATION, conversationId);
+    const join = () => {
+      socket.emit(SOCKET_EVENTS.JOIN_CONVERSATION, conversationId);
+      // Abriu a conversa ⇒ marca o que recebeu como lido (o servidor aplica
+      // a trava do Modo Discreto antes de virar azul).
+      socket.emit(SOCKET_EVENTS.MARK_READ, { conversation_id: conversationId });
+    };
     const handleConnect = () => {
       setConnected(true);
       join();
     };
     const handleDisconnect = () => setConnected(false);
+    // Com a conversa aberta, tudo que chega do contato já conta como lido.
+    // O servidor decide se vira `read` (azul) ou para em `delivered` quando
+    // alguém está em Modo Discreto.
+    const markRead = () => socket.emit(SOCKET_EVENTS.MARK_READ, { conversation_id: conversationId });
+
     const handleNewMessage = (raw) => {
       if (String(raw?.conversation_id) !== String(conversationId)) return;
       if (raw?.id != null && hiddenIds.current.has(String(raw.id))) return; // oculta p/ mim
       setMessages((list) => mergeIncomingMessage(list, raw, currentUserId));
+      const isMine = currentUserId != null && String(raw?.sender_id) === String(currentUserId);
+      if (!isMine) markRead();
+    };
+
+    // Checks de entrega/leitura das MINHAS mensagens, em tempo real.
+    const handleStatusUpdated = (payload) => {
+      if (String(payload?.conversation_id) !== String(conversationId)) return;
+      setMessages((list) => applyStatusUpdate(list, payload.message_ids, payload.status));
     };
     const handleDeleted = (messageId) => {
       setMessages((list) => markMessageDeleted(list, messageId));
@@ -149,6 +168,7 @@ export function useChat(conversationId, currentUserId) {
     socket.on(SOCKET_EVENTS.NEW_MESSAGE, handleNewMessage);
     socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleDeleted);
     socket.on(SOCKET_EVENTS.INVITE_UPDATED, handleInviteUpdated);
+    socket.on(SOCKET_EVENTS.MESSAGE_STATUS_UPDATED, handleStatusUpdated);
     socket.on(SOCKET_EVENTS.USER_TYPING, handleUserTyping);
 
     setConnected(socket.connected);
@@ -160,6 +180,7 @@ export function useChat(conversationId, currentUserId) {
       socket.off(SOCKET_EVENTS.NEW_MESSAGE, handleNewMessage);
       socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleDeleted);
       socket.off(SOCKET_EVENTS.INVITE_UPDATED, handleInviteUpdated);
+      socket.off(SOCKET_EVENTS.MESSAGE_STATUS_UPDATED, handleStatusUpdated);
       socket.off(SOCKET_EVENTS.USER_TYPING, handleUserTyping);
       clearTimeout(otherTypingTimer.current);
       clearTimeout(typingIdleTimer.current);
