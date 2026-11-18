@@ -52,16 +52,33 @@ export function normalizeEncontro(ev = {}) {
     status: agendado ? "Agendado" : "A combinar",
     subtitle: ev.local || (agendado ? dateTime || "Encontro agendado" : "A combinar via chat"),
     conversationId: ev.matchId ?? null,
+    otherUserId: ev.otherUserId != null ? String(ev.otherUserId) : null,
     googleUrl: agendado
       ? googleCalendarUrl({ titulo: ev.titulo, scheduledAt: ev.data_encontro, local: ev.local, nota: ev.nota })
       : null,
   };
 }
 
+// Deduplica por par de usuários: cada contato aparece UMA vez. Um encontro
+// AGENDADO tem prioridade sobre o card "A combinar" (match) do mesmo par.
+// (A API já deduplica; isto é uma trava extra no cliente contra duplicidade.)
+export function dedupeEncontros(list = []) {
+  const porPar = new Map();
+  for (const item of list) {
+    const chave = item.otherUserId || (item.conversationId != null ? `conv-${item.conversationId}` : item.id);
+    const atual = porPar.get(chave);
+    // Mantém o agendado sobre o match; se ambos forem do mesmo tipo, fica o 1º.
+    if (!atual || (atual.tipo !== "agendado" && item.tipo === "agendado")) {
+      porPar.set(chave, item);
+    }
+  }
+  return Array.from(porPar.values());
+}
+
 export async function fetchMatches() {
   const { data } = await api.get("/api/events/meus-encontros");
   if (!Array.isArray(data)) return [];
-  return data.map(normalizeEncontro);
+  return dedupeEncontros(data.map(normalizeEncontro));
 }
 
 // Front-3 — "Desistir": só encontros AGENDADOS têm rota de cancelamento

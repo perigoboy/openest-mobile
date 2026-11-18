@@ -225,8 +225,8 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
-    // Espaço para a tab bar flutuante não cobrir o último card.
-    paddingBottom: 120,
+    // Espaço para a tab bar flutuante não cobrir os botões do último card.
+    paddingBottom: 180,
   },
   emptyListContent: { flexGrow: 1, justifyContent: "center" },
   emptyState: { alignItems: "center", paddingHorizontal: spacing.xl },

@@ -1,6 +1,6 @@
 // tests/services/match.test.js — Front-3 (Encontros: endpoint + normalização)
 import api from "../../src/services/api";
-import { cancelEncontro, fetchMatches, formatEncontroDate, googleCalendarUrl, normalizeEncontro } from "../../src/services/match";
+import { cancelEncontro, dedupeEncontros, fetchMatches, formatEncontroDate, googleCalendarUrl, normalizeEncontro } from "../../src/services/match";
 
 jest.mock("../../src/services/api", () => ({
   __esModule: true,
@@ -46,6 +46,44 @@ describe("fetchMatches", () => {
   it("resposta fora do formato vira lista vazia (sem quebrar a tela)", async () => {
     api.get.mockResolvedValue({ data: { erro: "x" } });
     await expect(fetchMatches()).resolves.toEqual([]);
+  });
+
+  it("um match aceito NÃO gera card duplicado: o agendado substitui o 'A combinar'", async () => {
+    api.get.mockResolvedValue({
+      data: [
+        // match "A combinar" com Regis (otherUserId REGIS)
+        { id: "match-r", tipo: "match", matchName: "Regis", matchId: 8, otherUserId: "REGIS", fotos: [] },
+        // evento agendado com a MESMA pessoa (Regis) → deve colapsar em 1 card
+        { id: "sched-9", tipo: "agendado", titulo: "Café", matchName: "Regis", matchId: 8, otherUserId: "REGIS",
+          data_encontro: "2026-11-18T15:07:00", local: "Centro", fotos: [] },
+        { id: "match-p", tipo: "match", matchName: "perigoboy", matchId: 3, otherUserId: "PERIGO", fotos: [] },
+      ],
+    });
+    const list = await fetchMatches();
+    expect(list).toHaveLength(2); // Regis (1x) + perigoboy (1x)
+    const regis = list.filter((e) => e.otherUserId === "REGIS");
+    expect(regis).toHaveLength(1);
+    expect(regis[0].tipo).toBe("agendado");
+    expect(list.some((e) => e.otherUserId === "PERIGO" && e.tipo === "match")).toBe(true);
+  });
+});
+
+describe("dedupeEncontros", () => {
+  it("prioriza o agendado e, sem otherUserId, usa a conversa como chave", () => {
+    const list = dedupeEncontros([
+      { id: "match-a", tipo: "match", conversationId: 5 },
+      { id: "sched-a", tipo: "agendado", conversationId: 5 },
+    ]);
+    expect(list).toHaveLength(1);
+    expect(list[0].tipo).toBe("agendado");
+  });
+
+  it("mantém pessoas diferentes separadas", () => {
+    const list = dedupeEncontros([
+      { id: "m1", tipo: "match", otherUserId: "A" },
+      { id: "m2", tipo: "match", otherUserId: "B" },
+    ]);
+    expect(list).toHaveLength(2);
   });
 });
 
