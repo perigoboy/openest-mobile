@@ -353,6 +353,12 @@ export default function Profile({ navigation }) {
         name,
         bio: userData.bio || "",
         status_relacionamento: userData.maritalStatus || undefined,
+        // Campos adicionais agora persistidos pela API (migração add-profile-fields).
+        gender: userData.gender || "",
+        username: userData.username || "",
+        language: userData.language || "",
+        education: userData.education || "",
+        cityNeighborhood: userData.cityNeighborhood || "",
         photos,
         foto_url: photos[0] || userData.foto_url || null,
       };

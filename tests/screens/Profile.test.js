@@ -343,7 +343,7 @@ describe("Profile — Edição de perfil (T019)", () => {
 
     expect(api.put).toHaveBeenCalledWith(
       "/api/users/perfil",
-      expect.objectContaining({ name: "Fulano de Tal", bio: "" })
+      expect.objectContaining({ name: "Fulano de Tal", bio: "", gender: "", username: "fulano", language: "", education: "", cityNeighborhood: "" })
     );
     const titles = Alert.alert.mock.calls.map((c) => c[0]);
     expect(titles).toContain("Sucesso");
