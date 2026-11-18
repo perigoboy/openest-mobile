@@ -28,13 +28,23 @@ const ICONS = {
   Settings: "settings",
 };
 
+// T052 — nome lido pelo leitor de tela (antes era o nome interno da rota,
+// em inglês: "Discovery", "Settings"...).
+export const TAB_LABELS = {
+  Discovery: "Descobrir",
+  Matches: "Conversas",
+  Encontros: "Encontros",
+  Profile: "Perfil",
+  Settings: "Configurações",
+};
+
 // Só estes 4 aparecem na barra — Chat, SearchPreferences e
 // PhotoVerification continuam registrados (deep-link/navegação interna),
 // mas sem botão.
 const VISIBLE_TABS = ["Discovery", "Matches", "Encontros", "Profile", "Settings"];
 const FULLSCREEN_ROUTES = ["Chat", "SearchPreferences", "PhotoVerification"];
 
-function GlassTabBar({ state, navigation }) {
+export function GlassTabBar({ state, navigation }) {
   const insets = useSafeAreaInsets();
   const activeName = state.routes[state.index]?.name;
   if (FULLSCREEN_ROUTES.includes(activeName)) return null;
@@ -52,8 +62,9 @@ function GlassTabBar({ state, navigation }) {
             return (
               <View key={route.key} style={styles.tabSlot}>
                 <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel={route.name}
+                  testID={`tab-${route.name}`}
+                  accessibilityRole="tab"
+                  accessibilityLabel={TAB_LABELS[route.name] || route.name}
                   accessibilityState={{ selected: focused }}
                   style={[styles.iconWrap, focused && styles.iconActive]}
                   onPress={() => navigation.navigate(route.name)}

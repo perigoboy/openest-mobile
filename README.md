@@ -90,6 +90,12 @@ openest-mobile/
    npx expo start
    ```
 
+### 💬 Tempo real, notificações e deep links (T045, T048, T049)
+
+- **Chat em tempo real (Socket.IO):** usa a mesma `EXPO_PUBLIC_API_URL`. No celular físico, `localhost` aponta para o próprio celular — use o IP da sua máquina na rede (ex.: `http://192.168.0.10:3000`); no emulador Android, `http://10.0.2.2:3000`. O login de desenvolvimento (`admin` / `123`) não abre socket, pois o token dele não existe no backend.
+- **Push Notifications:** precisam de um *development build* (o Expo Go no Android não recebe push desde o SDK 53) e de um `projectId` do EAS: rode `npx eas init` uma vez — ele grava `expo.extra.eas.projectId` no `app.json`. Sem isso o app continua funcionando e mostra notificações **locais** enquanto estiver aberto.
+- **Deep link:** esquema `openest://` (ex.: `openest://chat/42` abre a conversa 42). Para testar sem notificação: `npx uri-scheme open "openest://chat/42" --android`.
+
 ---
 
 ## 🔀 Fluxo Git (Branching & PRs)

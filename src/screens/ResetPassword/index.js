@@ -64,6 +64,7 @@ export default function ResetPassword({ route, navigation }) {
 
         <View style={styles.formContainer}>
           <TextInput
+            accessibilityLabel="Token de recuperação"
             style={styles.input}
             placeholder="Token de recuperação"
             placeholderTextColor="#888"
@@ -73,6 +74,7 @@ export default function ResetPassword({ route, navigation }) {
           />
 
           <TextInput
+            accessibilityLabel="Nova senha"
             style={styles.input}
             placeholder="Nova senha"
             placeholderTextColor="#888"
@@ -82,6 +84,7 @@ export default function ResetPassword({ route, navigation }) {
           />
 
           <TextInput
+            accessibilityLabel="Confirmar nova senha"
             style={styles.input}
             placeholder="Confirme a nova senha"
             placeholderTextColor="#888"
@@ -90,11 +93,12 @@ export default function ResetPassword({ route, navigation }) {
             onChangeText={setConfirmPassword}
           />
 
-          <TouchableOpacity style={styles.button} onPress={handleResetPassword}>
+          <TouchableOpacity accessibilityRole="button" style={styles.button} onPress={handleResetPassword}>
             <Text style={styles.buttonText}>Redefinir Senha</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
+            accessibilityRole="button"
             style={styles.backLink}
             onPress={() => navigation.navigate('Login')}
           >

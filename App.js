@@ -1,14 +1,28 @@
 import "react-native-gesture-handler"; // precisa ser o 1º import do arquivo
 import React from "react";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 
 import Routes from "./src/routes";
+import linking from "./src/routes/linking";
 import { ToastProvider } from "./src/components";
+import NetworkErrorBanner from "./src/components/NetworkErrorBanner";
 import { AuthProvider } from "./src/contexts/AuthContext";
+import { RealtimeProvider } from "./src/contexts/RealtimeContext";
+import { configureNotificationHandler } from "./src/services/notifications";
 import { colors } from "./src/styles/theme";
+
+// T051 — mantém a SplashScreen nativa até o AuthContext decidir a rota
+// (escondida em src/routes/index.js). O fade deixa a transição suave.
+SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.setOptions({ duration: 400, fade: true });
+
+// T048 — decide se uma notificação recebida com o app aberto aparece
+// (não aparece se a conversa dela já estiver aberta na tela).
+configureNotificationHandler();
 
 const navigationTheme = {
   ...DarkTheme,
@@ -30,11 +44,17 @@ export default function App() {
       <SafeAreaProvider>
         <ToastProvider>
           <AuthProvider>
-            <NavigationContainer theme={navigationTheme}>
-              <StatusBar style="light" />
-              <Routes />
-            </NavigationContainer>
+            {/* T045/T048 — socket + push acompanham o login */}
+            <RealtimeProvider>
+              {/* T049 — deep links (openest://chat/<id>) e toque em notificação */}
+              <NavigationContainer theme={navigationTheme} linking={linking}>
+                <StatusBar style="light" />
+                <Routes />
+              </NavigationContainer>
+            </RealtimeProvider>
           </AuthProvider>
+          {/* T050 — aviso global de falha de rede com "Tentar novamente" */}
+          <NetworkErrorBanner />
         </ToastProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

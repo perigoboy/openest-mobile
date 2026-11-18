@@ -85,6 +85,7 @@ export default function Register({ navigation }) {
                 <View style={styles.formContainer}>
                   <Text style={styles.label}>Nome</Text>
                   <TextInput
+                    accessibilityLabel="Nome"
                     testID="input-name"
                     style={styles.input}
                     placeholder="Enter your name"
@@ -95,6 +96,7 @@ export default function Register({ navigation }) {
 
                   <Text style={styles.label}>Email</Text>
                   <TextInput
+                    accessibilityLabel="E-mail"
                     testID="input-email"
                     style={styles.input}
                     placeholder="Enter your email"
@@ -107,6 +109,7 @@ export default function Register({ navigation }) {
 
                   <Text style={styles.label}>Senha</Text>
                   <TextInput
+                    accessibilityLabel="Senha"
                     testID="input-password"
                     style={styles.input}
                     placeholder="Enter your password"
@@ -126,7 +129,7 @@ export default function Register({ navigation }) {
                     />
                     <View style={styles.termsTextContainer}>
                       <Text style={styles.termsText}>Li e concordo com os </Text>
-                      <TouchableOpacity testID="link-terms" onPress={handleOpenTerms}>
+                      <TouchableOpacity accessibilityRole="link" accessibilityLabel="Ler os Termos de Uso" testID="link-terms" onPress={handleOpenTerms}>
                         <Text style={styles.termsLink}>Termos de Uso e LGPD</Text>
                       </TouchableOpacity>
                     </View>

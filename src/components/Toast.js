@@ -4,10 +4,11 @@ import { colors, spacing, radius, typography } from "../styles/theme";
 
 const ToastContext = createContext(null);
 
-const VARIANT_COLORS = {
+// T052 — tons escuros garantem contraste AA com o texto branco.
+export const VARIANT_COLORS = {
   info: colors.surfaceAlt,
-  success: colors.success,
-  error: colors.danger,
+  success: colors.successDark,
+  error: colors.dangerDark,
 };
 
 export function ToastProvider({ children }) {
@@ -52,6 +53,8 @@ export function ToastProvider({ children }) {
       {toast && (
         <Animated.View
           pointerEvents="none"
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
           style={[
             styles.toast,
             { backgroundColor: VARIANT_COLORS[toast.type], opacity },

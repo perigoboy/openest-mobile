@@ -53,6 +53,7 @@ export default function Login({ navigation }) {
 
               <View style={styles.formContainer}>
                 <TextInput
+                  accessibilityLabel="E-mail"
                   testID="input-email"
                   style={styles.input}
                   placeholder="E-mail"
@@ -64,6 +65,7 @@ export default function Login({ navigation }) {
                 />
 
                 <TextInput
+                  accessibilityLabel="Senha"
                   testID="input-password"
                   style={styles.input}
                   placeholder="Senha"
@@ -74,6 +76,7 @@ export default function Login({ navigation }) {
                 />
 
                 <TouchableOpacity
+                  accessibilityRole="button"
                   testID="btn-submit"
                   style={styles.button}
                   onPress={handleLogin}
@@ -82,6 +85,7 @@ export default function Login({ navigation }) {
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  accessibilityRole="button"
                   testID="link-forgot"
                   style={styles.forgotPasswordLink}
                   onPress={() => navigation.navigate('ForgotPassword')}
@@ -90,6 +94,7 @@ export default function Login({ navigation }) {
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  accessibilityRole="button"
                   testID="link-register"
                   style={styles.registerLink}
                   onPress={() => navigation.navigate('Register')}

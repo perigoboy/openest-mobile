@@ -9,6 +9,12 @@ export const colors = {
   warning: "#F1C40F",  // Alertas / P1
   success: "#2ECC71",  // Confirmações / P2
 
+  // T052 — fundos com texto branco precisam de contraste ≥ 4.5:1 (WCAG AA).
+  // danger/success puros dão 3.8:1 e 2.1:1 com branco; estes passam.
+  dangerDark: "#C0392B",  // 5.4:1 com branco
+  successDark: "#1E8449", // 4.7:1 com branco
+  dangerLight: "#FF8A80", // ícone de erro sobre a bolha roxa (3.7:1)
+
   background: "#0D0D0F",
   surface: "#1A1A1E",
   surfaceAlt: "#242429",

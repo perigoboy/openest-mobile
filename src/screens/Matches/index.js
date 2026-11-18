@@ -14,11 +14,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "../../components";
 import { fetchConversations } from "../../services/conversations";
 import { unmatch } from "../../services/match";
+import { SOCKET_EVENTS, onSocketEvent } from "../../services/socket";
 import { colors, radius, spacing, typography } from "../../styles/theme";
 
 function ConversationItem({ conversation, onPress, onUnmatch }) {
   return (
-    <>
+    <View style={styles.conversationRow}>
       <TouchableOpacity
         testID={`conversation-${conversation.id}`}
         style={styles.conversation}
@@ -66,11 +67,11 @@ function ConversationItem({ conversation, onPress, onUnmatch }) {
         }}
         activeOpacity={0.75}
         accessibilityRole="button"
-        accessibilityLabel="Mais opções da conversa"
+        accessibilityLabel={`Mais opções da conversa com ${conversation.name}`}
       >
         <Ionicons name="ellipsis-vertical" size={18} color={colors.textMuted} />
       </TouchableOpacity>
-    </>
+    </View>
   );
 }
 
@@ -110,10 +111,24 @@ export default function Matches({ navigation }) {
     loadConversations();
   }, [loadConversations]);
 
+  // T045 — lista viva: novo match ou nova mensagem atualizam a lista sem o
+  // usuário precisar puxar para recarregar.
+  useEffect(() => {
+    const refresh = () => loadConversations(true);
+    const offMatch = onSocketEvent(SOCKET_EVENTS.NEW_MATCH, refresh);
+    const offNotification = onSocketEvent(SOCKET_EVENTS.NOTIFICATION, refresh);
+    return () => {
+      offMatch();
+      offNotification();
+    };
+  }, [loadConversations]);
+
   function openConversation(conversation) {
     navigation?.navigate?.("Chat", {
       conversationId: conversation.id,
       contact: {
+        // id do outro usuário — necessário para bloquear a partir do Chat (T037)
+        id: conversation.other_user_id ?? null,
         name: conversation.name,
         avatar: conversation.img,
       },
@@ -257,6 +272,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   conversation: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     minHeight: 80,
@@ -304,9 +320,32 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: spacing.sm,
   },
+  // Botão do estado vazio (estilos perdidos no merge do T041/T042 — sem eles
+  // o texto ficava preto sobre o fundo escuro, invisível).
+  emptyCTA: {
+    marginTop: spacing.lg,
+    minHeight: 48,
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+  },
+  emptyCTAText: {
+    ...typography.body,
+    fontWeight: "700",
+    color: colors.white,
+  },
   // T041 — botão de opções da conversa (ellipsis)
   optionsButton: {
-    padding: spacing.xs,
-    marginRight: spacing.sm,
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: spacing.xs,
+  },
+  conversationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.sm,
   },
 });

@@ -388,6 +388,7 @@ export default function Profile({ navigation }) {
             <View style={styles.avatarWrapper}>
               <Avatar uri={userData.foto_url} name={userData.name} size={80} />
               <TouchableOpacity
+                accessibilityRole="button"
                 testID="btn-change-photo"
                 style={[styles.changePhotoButton, uploading && styles.changePhotoButtonDisabled]}
                 onPress={handleChangePhoto}
@@ -421,6 +422,7 @@ export default function Profile({ navigation }) {
           <View style={styles.formContainer}>
             <Text style={styles.label}>Nome</Text>
             <TextInput
+              accessibilityLabel="Nome"
               style={styles.input}
               placeholder="Seu Nome"
               placeholderTextColor="#999"
@@ -430,6 +432,7 @@ export default function Profile({ navigation }) {
 
             <Text style={styles.label}>Sobrenome</Text>
             <TextInput
+              accessibilityLabel="Sobrenome"
               style={styles.input}
               placeholder="Seu Sobrenome"
               placeholderTextColor="#999"
@@ -439,6 +442,7 @@ export default function Profile({ navigation }) {
 
             <Text style={styles.label}>Gênero</Text>
             <TextInput
+              accessibilityLabel="Gênero"
               style={styles.input}
               placeholder="Seu Gênero"
               placeholderTextColor="#999"
@@ -448,6 +452,7 @@ export default function Profile({ navigation }) {
 
             <Text style={styles.label}>Usuário</Text>
             <TextInput
+              accessibilityLabel="Nome de usuário"
               style={styles.input}
               placeholder="Seu Usuário"
               placeholderTextColor="#999"
@@ -457,6 +462,7 @@ export default function Profile({ navigation }) {
 
             <Text style={styles.label}>Língua</Text>
             <TextInput
+              accessibilityLabel="Idioma principal"
               style={styles.input}
               placeholder="Idioma principal"
               placeholderTextColor="#999"
@@ -466,6 +472,7 @@ export default function Profile({ navigation }) {
 
             <Text style={styles.label}>Escolaridade</Text>
             <TextInput
+              accessibilityLabel="Escolaridade"
               style={styles.input}
               placeholder="Sua escolaridade"
               placeholderTextColor="#999"
@@ -475,6 +482,7 @@ export default function Profile({ navigation }) {
 
             <Text style={styles.label}>Estado civil</Text>
             <TextInput
+              accessibilityLabel="Status de relacionamento"
               style={styles.input}
               placeholder="Status de relacionamento"
               placeholderTextColor="#999"
@@ -484,6 +492,7 @@ export default function Profile({ navigation }) {
 
             <Text style={styles.label}>Cidade / Bairro</Text>
             <TextInput
+              accessibilityLabel="Localidade"
               style={styles.input}
               placeholder="Sua localidade"
               placeholderTextColor="#999"
@@ -493,6 +502,7 @@ export default function Profile({ navigation }) {
 
             <Text style={styles.label}>Biografia</Text>
             <TextInput
+              accessibilityLabel="Sobre você"
               style={[styles.input, styles.textArea]}
               placeholder="Escreva sobre você..."
               placeholderTextColor="#999"
@@ -530,7 +540,7 @@ export default function Profile({ navigation }) {
               </Text>
             </View>
 
-            <TouchableOpacity style={styles.buttonWrapper} onPress={handleSave}>
+            <TouchableOpacity accessibilityRole="button" style={styles.buttonWrapper} onPress={handleSave}>
               <LinearGradient
                 colors={['#7b2cbf', '#5a189a', '#3c096c']}
                 style={styles.button}

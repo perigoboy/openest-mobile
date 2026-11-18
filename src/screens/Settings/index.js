@@ -30,6 +30,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
+import { setNotificationsEnabledAsync } from "../../services/notifications"; // T048
 import * as Sharing from "expo-sharing"; // T024 — abre a folha de compartilhamento
 import { File, Paths } from "expo-file-system"; // T024 — grava o JSON exportado
 import api from "../../services/api";
@@ -113,8 +114,9 @@ export default function Settings({ navigation }) {
     } catch (error) {
       console.error("Erro ao salvar preferência de notificações:", error);
     }
-    // TODO(T048): ao ativar, solicitar permissão e inscrever o token no push
-    // via expo-notifications; ao desativar, cancelar a inscrição.
+    // T048 — ao ativar, pede permissão e registra o token de push na API;
+    // ao desativar, remove o token (o aparelho para de receber push).
+    await setNotificationsEnabledAsync(value);
   }
 
   function handleClosePasswordModal() {
@@ -362,6 +364,7 @@ export default function Settings({ navigation }) {
 
               <Text style={styles.modalLabel}>Senha atual</Text>
               <TextInput
+                accessibilityLabel="Senha atual"
                 testID="input-current-password"
                 style={styles.modalInput}
                 placeholder="Sua senha atual"
@@ -374,6 +377,7 @@ export default function Settings({ navigation }) {
 
               <Text style={styles.modalLabel}>Nova senha</Text>
               <TextInput
+                accessibilityLabel="Nova senha"
                 testID="input-new-password"
                 style={styles.modalInput}
                 placeholder="Mínimo de 6 caracteres"
@@ -386,6 +390,7 @@ export default function Settings({ navigation }) {
 
               <Text style={styles.modalLabel}>Confirmar nova senha</Text>
               <TextInput
+                accessibilityLabel="Confirmar nova senha"
                 testID="input-confirm-password"
                 style={styles.modalInput}
                 placeholder="Repita a nova senha"

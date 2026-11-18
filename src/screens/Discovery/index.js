@@ -311,11 +311,11 @@ export default function Discovery({ navigation }) {
                   : "Volte aos filtros para ampliar a busca."}
               </Text>
               {deck.length === 0 ? (
-                <TouchableOpacity testID="btn-open-filters" style={styles.restart} onPress={openFilters}>
+                <TouchableOpacity accessibilityRole="button" testID="btn-open-filters" style={styles.restart} onPress={openFilters}>
                   <Text style={styles.restartText}>Ajustar filtros</Text>
                 </TouchableOpacity>
               ) : (
-                <TouchableOpacity testID="btn-restart" style={styles.restart} onPress={() => setIndex(0)}>
+                <TouchableOpacity accessibilityRole="button" testID="btn-restart" style={styles.restart} onPress={() => setIndex(0)}>
                   <Text style={styles.restartText}>Ver de novo</Text>
                 </TouchableOpacity>
               )}
