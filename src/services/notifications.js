@@ -26,6 +26,17 @@ export const NOTIFICATIONS_ENABLED_KEY = "notifications_enabled"; // mesma chave
 export const PUSH_TOKEN_KEY = "expo_push_token";
 export const ANDROID_CHANNEL_ID = "default"; // o backend envia com channelId: "default"
 
+// Front-2 — No Expo Go (Android, SDK 53+) o módulo nativo de notificações é
+// limitado: `setNotificationChannelAsync` estoura NullPointerException e o push
+// remoto não existe. Detectamos o Expo Go para PULAR as chamadas nativas; o
+// banner in-app (estilo Instagram) assume o aviso enquanto se está no Expo Go.
+export function isExpoGo() {
+  return (
+    Constants?.appOwnership === "expo" ||
+    Constants?.executionEnvironment === "storeClient"
+  );
+}
+
 // Preferência da tela de Configurações (padrão: ativadas).
 export async function areNotificationsEnabled() {
   try {
@@ -64,12 +75,18 @@ export function configureNotificationHandler() {
 
 export async function ensureAndroidChannelAsync() {
   if (Platform.OS !== "android") return;
-  await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
-    name: "Matches e mensagens",
-    importance: Notifications.AndroidImportance.HIGH,
-    vibrationPattern: [0, 250, 250, 250],
-    lightColor: "#8E44AD",
-  });
+  // Front-2 — no Expo Go isto crasha (NullPointerException). Pula sem erro.
+  if (isExpoGo()) return;
+  try {
+    await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
+      name: "Matches e mensagens",
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#8E44AD",
+    });
+  } catch (error) {
+    console.warn("[push] Não foi possível criar o canal Android:", error?.message || error);
+  }
 }
 
 export function getProjectId() {
@@ -94,6 +111,10 @@ async function ensurePermissionAsync() {
 export async function registerForPushNotificationsAsync() {
   try {
     if (!(await areNotificationsEnabled())) return null;
+
+    // Front-2 — Expo Go não tem push remoto nem canal nativo. Sai cedo, sem
+    // tocar no módulo nativo (que crasharia); o banner in-app cobre o aviso.
+    if (isExpoGo()) return null;
 
     await ensureAndroidChannelAsync();
     const granted = await ensurePermissionAsync();
@@ -152,6 +173,8 @@ export async function setNotificationsEnabledAsync(enabled) {
 // Notificação local imediata (trigger: null). `data` segue o mesmo formato do
 // push do backend ({ type, conversationId }) para o Deep Linking (T049).
 export async function presentLocalNotification({ title, body, data }) {
+  // Front-2 — no Expo Go a notificação nativa crasha; o banner in-app cobre.
+  if (isExpoGo()) return false;
   try {
     await ensureAndroidChannelAsync();
     await Notifications.scheduleNotificationAsync({
@@ -163,6 +186,30 @@ export async function presentLocalNotification({ title, body, data }) {
     console.error("Erro ao exibir notificação local:", error?.message || error);
     return false;
   }
+}
+
+// Front-1 — converte um evento de socket no formato do BANNER in-app
+// (foto do Cloudinary, nome do remetente, prévia da mensagem).
+export function buildInAppNotificationFromSocket(event, payload = {}) {
+  const conversationId = payload.conversation_id ?? payload.conversationId ?? null;
+  if (event === "new_match") {
+    return {
+      type: "match",
+      name: payload.other_user_name || "Novo match",
+      message: "Vocês deram match! Diga oi 💜",
+      avatar: payload.other_user_avatar || null,
+      conversationId,
+      userId: payload.user_id ?? null,
+    };
+  }
+  return {
+    type: "message",
+    name: payload.sender_name || payload.title || "Nova mensagem",
+    message: payload.content || payload.body || "Você recebeu uma nova mensagem",
+    avatar: payload.sender_avatar || null,
+    conversationId,
+    userId: payload.sender_id ?? null,
+  };
 }
 
 // Converte os eventos do socket em notificações locais.

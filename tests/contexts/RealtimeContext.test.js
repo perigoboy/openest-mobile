@@ -8,9 +8,9 @@ import { RealtimeProvider, handleRealtimeEvent, isMockToken, useRealtime } from 
 import { __mockSocket as socket, connectSocket, disconnectSocket } from "../../src/services/socket";
 import {
   areNotificationsEnabled,
-  presentLocalNotification,
   registerForPushNotificationsAsync,
 } from "../../src/services/notifications";
+import { showInAppNotification } from "../../src/services/inAppNotifications";
 import { clearActiveConversation, setActiveConversation } from "../../src/services/activeConversation";
 
 let mockAuth = { signed: true, user: { id: "me" } };
@@ -42,9 +42,11 @@ jest.mock("../../src/services/socket", () => {
 
 jest.mock("../../src/services/notifications", () => ({
   areNotificationsEnabled: jest.fn(),
-  presentLocalNotification: jest.fn(),
   registerForPushNotificationsAsync: jest.fn(),
-  buildLocalNotificationFromSocket: jest.requireActual("../../src/services/notifications").buildLocalNotificationFromSocket,
+  buildInAppNotificationFromSocket: jest.requireActual("../../src/services/notifications").buildInAppNotificationFromSocket,
+}));
+jest.mock("../../src/services/inAppNotifications", () => ({
+  showInAppNotification: jest.fn(() => "inapp-1"),
 }));
 
 function Status() {
@@ -67,7 +69,6 @@ beforeEach(() => {
   mockAuth = { signed: true, user: { id: "me" } };
   SecureStore.getItemAsync.mockResolvedValue("jwt-real");
   areNotificationsEnabled.mockResolvedValue(true);
-  presentLocalNotification.mockResolvedValue(true);
   registerForPushNotificationsAsync.mockResolvedValue(null);
 });
 
@@ -126,32 +127,42 @@ describe("RealtimeProvider — conexão", () => {
   });
 });
 
-describe("RealtimeProvider — eventos viram notificação local (sem push remoto)", () => {
-  it("nova mensagem mostra notificação local", async () => {
+describe("RealtimeProvider — eventos viram banner in-app (sem push remoto)", () => {
+  it("nova mensagem mostra o banner com nome, prévia e foto", async () => {
     renderProvider();
     await waitFor(() => expect(registerForPushNotificationsAsync).toHaveBeenCalled());
 
     await act(async () => {
-      socket.fire("notification", { title: "Ana", body: "Oi!", conversation_id: 42 });
+      socket.fire("notification", {
+        type: "message",
+        sender_name: "Ana",
+        sender_avatar: "https://res.cloudinary.com/x/ana.jpg",
+        content: "Oi!",
+        conversation_id: 42,
+        sender_id: "u-ana",
+      });
     });
 
-    expect(presentLocalNotification).toHaveBeenCalledWith({
-      title: "Ana",
-      body: "Oi!",
-      data: { type: "message", conversationId: "42" },
+    expect(showInAppNotification).toHaveBeenCalledWith({
+      type: "message",
+      name: "Ana",
+      message: "Oi!",
+      avatar: "https://res.cloudinary.com/x/ana.jpg",
+      conversationId: 42,
+      userId: "u-ana",
     });
   });
 
-  it("novo match mostra notificação local", async () => {
+  it("novo match mostra o banner de match", async () => {
     renderProvider();
     await waitFor(() => expect(registerForPushNotificationsAsync).toHaveBeenCalled());
 
     await act(async () => {
-      socket.fire("new_match", { conversation_id: 9, match_id: "m1" });
+      socket.fire("new_match", { conversation_id: 9, match_id: "m1", other_user_name: "Bruno", user_id: "u-bruno" });
     });
 
-    expect(presentLocalNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Novo match! 💜", data: { type: "match", conversationId: "9" } })
+    expect(showInAppNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "match", name: "Bruno", conversationId: 9, userId: "u-bruno" })
     );
   });
 
@@ -162,10 +173,10 @@ describe("RealtimeProvider — eventos viram notificação local (sem push remot
     await act(async () => {});
 
     await act(async () => {
-      socket.fire("notification", { title: "Ana", body: "Oi!", conversation_id: 42 });
+      socket.fire("notification", { sender_name: "Ana", content: "Oi!", conversation_id: 42 });
     });
 
-    expect(presentLocalNotification).not.toHaveBeenCalled();
+    expect(showInAppNotification).not.toHaveBeenCalled();
   });
 });
 
@@ -173,13 +184,13 @@ describe("handleRealtimeEvent", () => {
   it("não notifica a conversa que está aberta", async () => {
     setActiveConversation(42);
     await expect(handleRealtimeEvent("notification", { conversation_id: 42 }, { pushRegistered: false })).resolves.toBe(false);
-    expect(presentLocalNotification).not.toHaveBeenCalled();
+    expect(showInAppNotification).not.toHaveBeenCalled();
   });
 
   it("respeita as notificações desligadas", async () => {
     areNotificationsEnabled.mockResolvedValue(false);
     await expect(handleRealtimeEvent("new_match", {}, { pushRegistered: false })).resolves.toBe(false);
-    expect(presentLocalNotification).not.toHaveBeenCalled();
+    expect(showInAppNotification).not.toHaveBeenCalled();
   });
 
   it("isMockToken reconhece só o token de desenvolvimento", () => {

@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "../../components";
-import { fetchMatches, unmatch } from "../../services/match";
+import { cancelEncontro, fetchMatches } from "../../services/match";
 import { colors, radius, spacing, typography } from "../../styles/theme";
 
 function MatchItem({ match, onDesistir, onPress }) {
@@ -27,23 +27,23 @@ function MatchItem({ match, onDesistir, onPress }) {
       accessibilityLabel={`Ver detalhes do match ${match.id}`}
     >
       <View style={styles.matchContainer}>
-        <Avatar uri={match.photo} name={match.name} size={48} />
+        <Avatar uri={match.photo || undefined} name={match.name} size={48} />
         <View style={styles.matchInfo}>
           <Text style={styles.matchName} numberOfLines={1}>
             {match.name}
           </Text>
-          <Text style={styles.matchInfoText}>
-            {match.distance} km · {match.status_relacionamento}
+          <Text style={styles.matchInfoText} numberOfLines={1}>
+            {match.subtitle}
           </Text>
         </View>
       </View>
       <TouchableOpacity
         testID={`match-desistir-${match.id}`}
         style={styles.desistirButton}
-        onPress={() => onDesistir(match.id)}
+        onPress={() => onDesistir(match)}
         activeOpacity={0.7}
         accessibilityRole="button"
-        accessibilityLabel="Desistir deste match"
+        accessibilityLabel={`Desistir do encontro com ${match.name}`}
       >
         <Text style={styles.desistirText}>Desistir</Text>
       </TouchableOpacity>
@@ -78,14 +78,26 @@ export default function Encontros({ navigation }) {
     loadMatches();
   }, [loadMatches]);
 
-  const handleDesistir = useCallback(async (matchId) => {
+  const openChat = useCallback(
+    (item) => {
+      if (item?.conversationId != null) {
+        navigation?.navigate?.("Chat", {
+          conversationId: item.conversationId,
+          contact: { name: item.name, avatar: item.photo },
+        });
+      }
+    },
+    [navigation]
+  );
+
+  const handleDesistir = useCallback(async (item) => {
     try {
-      await unmatch(matchId);
-      setMatches((prev) => prev.filter((m) => m.id !== matchId));
-      Alert.alert("Sucesso", "Você desistiu deste encontro/match.");
+      await cancelEncontro(item);
+      setMatches((prev) => prev.filter((m) => m.id !== item.id));
+      Alert.alert("Pronto", "Encontro removido da sua lista.");
     } catch (error) {
-      console.error("Erro ao desistir do match:", error);
-      Alert.alert("Erro", "Não foi possível desistir deste encontro.");
+      console.error("Erro ao desistir do encontro:", error);
+      Alert.alert("Erro", "Não foi possível remover este encontro.");
     }
   }, []);
 
@@ -98,7 +110,9 @@ export default function Encontros({ navigation }) {
       <FlatList
         data={matches}
         keyExtractor={(item) => item.id || String(item)}
-        renderItem={({ item }) => <MatchItem match={item} onDesistir={handleDesistir} />}
+        renderItem={({ item }) => (
+          <MatchItem match={item} onDesistir={handleDesistir} onPress={() => openChat(item)} />
+        )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}

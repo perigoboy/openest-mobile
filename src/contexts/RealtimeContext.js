@@ -15,10 +15,10 @@ import {
 } from "../services/socket";
 import {
   areNotificationsEnabled,
-  buildLocalNotificationFromSocket,
-  presentLocalNotification,
+  buildInAppNotificationFromSocket,
   registerForPushNotificationsAsync,
 } from "../services/notifications";
+import { showInAppNotification } from "../services/inAppNotifications";
 import { isConversationActive } from "../services/activeConversation";
 
 const RealtimeContext = createContext({ connected: false });
@@ -29,13 +29,16 @@ export function isMockToken(token) {
   return typeof token === "string" && token.startsWith("mock-");
 }
 
+// Front-1 — Mostra o banner in-app ao receber um evento de socket (mensagem/
+// match). Só com o push remoto DESATIVADO (Expo Go/sem token): com push ativo,
+// o próprio SO mostra o aviso e não queremos duplicar. Nunca para a conversa
+// que já está aberta, nem com as notificações desligadas nas Configurações.
 export async function handleRealtimeEvent(event, payload, { pushRegistered }) {
-  // Com push remoto ativo, o backend já manda a notificação — evitar duplicada.
   if (pushRegistered) return false;
   const conversationId = payload?.conversation_id ?? payload?.conversationId;
   if (isConversationActive(conversationId)) return false;
   if (!(await areNotificationsEnabled())) return false;
-  return presentLocalNotification(buildLocalNotificationFromSocket(event, payload));
+  return showInAppNotification(buildInAppNotificationFromSocket(event, payload));
 }
 
 export function RealtimeProvider({ children }) {
