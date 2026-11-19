@@ -1,0 +1,75 @@
+appId: com.openest.app
+---
+# 1. CADASTRO
+- launchApp:
+    clearState: true # Limpa o app para começar do zero (tela de Login)
+
+- tapOn: "Não tem uma conta? Cadastre-se"
+- assertVisible: "Nome"
+
+# Gera um e-mail aleatório para não dar erro de "e-mail já cadastrado"
+- evalScript: ${output.email = "e2e.maestro" + Date.now() + "@openest.com"}
+
+- tapOn:
+    id: "input-name"
+- inputText: "Usuario Teste E2E"
+- tapOn:
+    id: "input-email"
+- inputText: ${output.email}
+- tapOn:
+    id: "input-password"
+- inputText: "senha123"
+- tapOn:
+    id: "checkbox-terms"
+- tapOn:
+    id: "btn-submit"
+
+# 2. DISCOVERY E MATCH
+# O app deve fazer login automático e cair no Discovery
+- assertVisible:
+    id: "btn-like"
+    timeout: 10000 # Espera a API carregar os perfis
+
+# Dá o Like no primeiro perfil
+- tapOn:
+    id: "btn-like"
+
+# Como o match depende do backend (se o outro usuário também deu like),
+# esperamos o modal de Match aparecer. Se não aparecer, o teste falha,
+# o que é correto para garantir que o fluxo de match funciona.
+- assertVisible: "It's a Match!"
+- tapOn:
+    id: "btn-match-chat"
+
+# 3. CHAT
+- assertVisible:
+    id: "chat-message-input"
+- tapOn:
+    id: "chat-message-input"
+- inputText: "Olá, essa é uma mensagem de teste automatizado!"
+- tapOn:
+    id: "chat-send-button"
+
+# Valida se a mensagem apareceu na tela
+- assertVisible: "Olá, essa é uma mensagem de teste automatizado!"
+
+# 4. LOGIN (Testando o fluxo de login separado)
+# Volta para a lista de conversas e sai da conta
+- tapOn:
+    id: "chat-back-button"
+- tapOn:
+    id: "btn-my-avatar"
+# (Nota: se a tela de Settings não tiver um botão de "Sair" com testID, 
+# o Maestro pode falhar aqui. Verifique se o botão de logout tem testID="btn-logout")
+
+# Aqui você poderia fazer:
+# - tapOn:
+#     id: "btn-logout"
+# - tapOn:
+#     id: "input-email"
+# - inputText: ${output.email}
+# - tapOn:
+#     id: "input-password"
+# - inputText: "senha123"
+# - tapOn:
+#     id: "btn-submit"
