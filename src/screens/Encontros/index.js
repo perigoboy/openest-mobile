@@ -18,6 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "../../components";
 import { cancelEncontro, fetchMatches } from "../../services/match";
+import { onSocketEvent } from "../../services/socket";
 import { colors, radius, spacing, typography } from "../../styles/theme";
 
 function StatusBadge({ status }) {
@@ -128,6 +129,12 @@ export default function Encontros({ navigation }) {
     const unsubscribe = navigation?.addListener?.("focus", () => loadMatches(true));
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadMatches]);
+
+  // Se o outro lado desistir enquanto esta tela está aberta, some na hora.
+  useEffect(() => {
+    const off = onSocketEvent("encontro_cancelado", () => loadMatches(true));
+    return off;
   }, [loadMatches]);
 
   const openChat = useCallback(

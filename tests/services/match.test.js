@@ -98,15 +98,27 @@ describe("normalizeEncontro", () => {
   });
 });
 
-describe("cancelEncontro", () => {
-  it("encontro agendado chama a rota de cancelamento", async () => {
+describe("cancelEncontro (Desistir)", () => {
+  it("manda o id COMPLETO (com prefixo) — rawId sozinho não era reconhecido pela API", async () => {
     api.delete.mockResolvedValue({ data: { success: true } });
-    await cancelEncontro({ tipo: "agendado", rawId: "3" });
-    expect(api.delete).toHaveBeenCalledWith("/api/events/cancelar/3");
+    await cancelEncontro({ tipo: "agendado", id: "sched-3", rawId: "3", otherUserId: "U2" });
+    expect(api.delete).toHaveBeenCalledWith(
+      "/api/events/cancelar/sched-3",
+      expect.objectContaining({ data: { other_user_id: "U2" } })
+    );
   });
 
-  it("match não tem rota de desfazer: resolve sem chamar a API", async () => {
-    await expect(cancelEncontro({ tipo: "match", rawId: "abc" })).resolves.toEqual({ skipped: true });
+  it('card "A combinar" TAMBÉM chama a API (antes sumia só da tela e voltava no refresh)', async () => {
+    api.delete.mockResolvedValue({ data: { success: true } });
+    await cancelEncontro({ tipo: "match", id: "match-abc", rawId: "abc", otherUserId: "U2" });
+    expect(api.delete).toHaveBeenCalledWith(
+      "/api/events/cancelar/match-abc",
+      expect.objectContaining({ data: { other_user_id: "U2" } })
+    );
+  });
+
+  it("sem id não chama a API e avisa o erro (nada some da tela à toa)", async () => {
+    await expect(cancelEncontro({ tipo: "match" })).rejects.toThrow(/identificar o encontro/i);
     expect(api.delete).not.toHaveBeenCalled();
   });
 });

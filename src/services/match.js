@@ -1,3 +1,23 @@
+// "Desistir": encerra o vínculo inteiro (evento agendado + match) no banco.
+//
+// Dois bugs faziam o card voltar no refresh:
+//   1. mandava `rawId` (sem o prefixo), e a API só reconhecia 'sched-'/'match-'
+//      → caía fora dos dois `if`, respondia 200 e não apagava nada;
+//   2. cards "A combinar" nem chegavam a chamar a API (saíam só da tela).
+// Agora manda o id COMPLETO e sempre chama a API, nos dois tipos de card.
+export async function cancelEncontro(item) {
+  const id = item?.id;
+  if (!id) {
+    throw new Error("Não foi possível identificar o encontro a ser removido.");
+  }
+  const { data } = await api.delete(`/api/events/cancelar/${encodeURIComponent(id)}`, {
+    // Rede de segurança: se o evento já tiver sumido, a API ainda resolve o
+    // vínculo pelo outro participante.
+    data: { other_user_id: item?.otherUserId ?? null },
+  });
+  return data;
+}
+
 // src/services/match.js
 // T041 — Desfazer match (unmatch): encerra uma conexão diretamente pela
 // lista de conversas, sem depender de denúncia/bloqueio.
@@ -79,17 +99,6 @@ export async function fetchMatches() {
   const { data } = await api.get("/api/events/meus-encontros");
   if (!Array.isArray(data)) return [];
   return dedupeEncontros(data.map(normalizeEncontro));
-}
-
-// Front-3 — "Desistir": só encontros AGENDADOS têm rota de cancelamento
-// (DELETE /api/events/cancelar/:id). Para um match não há rota de desfazer no
-// backend hoje; devolvemos { skipped:true } para a tela remover só localmente.
-export async function cancelEncontro(item) {
-  if (item?.tipo === "agendado" && item.rawId) {
-    const { data } = await api.delete(`/api/events/cancelar/${item.rawId}`);
-    return data;
-  }
-  return { skipped: true };
 }
 
 // T041 — Desfazer match (unmatch): encerra uma conexão diretamente pela
