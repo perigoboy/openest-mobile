@@ -26,6 +26,9 @@ export const SOCKET_EVENTS = {
   // Confirmação de entrega/leitura (checks estilo WhatsApp)
   MARK_DELIVERED: "mark_delivered",
   MARK_READ: "mark_read",
+  // Nomes da arquitetura persistente (o servidor aceita os dois)
+  MESSAGE_DELIVERED_ACK: "message_delivered_ack",
+  MARK_MESSAGES_READ: "mark_messages_read",
   MESSAGE_STATUS_UPDATED: "message_status_updated",
 };
 
