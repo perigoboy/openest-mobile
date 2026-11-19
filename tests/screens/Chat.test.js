@@ -530,28 +530,41 @@ describe("Chat — agendamento de encontro", () => {
 describe("Chat — checks de status", () => {
   const mine = (status) => [{ id: "1", text: "oi", time: "19:16", isMine: true, isImage: false, status }];
 
-  it("enviada: 1 check cinza", async () => {
+  // O glifo renderizado prova QUAL ícone foi usado: `checkmark` (1 check)
+  // vs `checkmark-done` (2 checks). Guarda contra o bug de "1 check só".
+  const glifo = (node) => String(node.props.children);
+
+  it("enviada: 1 check só", async () => {
     mockChatState({ messages: mine("sent") });
     renderChat();
-    await waitFor(() => expect(screen.getByTestId("tick-sent")).toBeTruthy());
+    const tick = await screen.findByTestId("tick-sent");
+    expect(tick.props.accessibilityLabel).toBe("Enviada");
+    expect(screen.queryByTestId("tick-delivered")).toBeNull();
     expect(screen.queryByTestId("tick-read")).toBeNull();
   });
 
-  it("entregue: 2 checks cinzas", async () => {
+  it("entregue e visualizada usam o MESMO ícone de 2 checks — e nunca o de 1", async () => {
+    mockChatState({ messages: mine("sent") });
+    const a = renderChat();
+    const glifoSent = glifo(await screen.findByTestId("tick-sent"));
+    a.unmount();
+
     mockChatState({ messages: mine("delivered") });
-    renderChat();
-    await waitFor(() => expect(screen.getByTestId("tick-delivered")).toBeTruthy());
-    expect(screen.queryByTestId("tick-read")).toBeNull();
-  });
+    const b = renderChat();
+    const tickDelivered = await screen.findByTestId("tick-delivered");
+    const glifoDelivered = glifo(tickDelivered);
+    expect(tickDelivered.props.accessibilityLabel).toBe("Entregue");
+    b.unmount();
 
-  it("visualizada: 2 checks AZUIS (#38BDF8)", async () => {
     mockChatState({ messages: mine("read") });
     renderChat();
-    const tick = await screen.findByTestId("tick-read");
-    expect(tick).toBeTruthy();
-    // azul só aparece como estado `read`; os cinzas não são renderizados
-    expect(screen.queryByTestId("tick-delivered")).toBeNull();
-    expect(screen.queryByTestId("tick-sent")).toBeNull();
+    const tickRead = await screen.findByTestId("tick-read");
+    const glifoRead = glifo(tickRead);
+    expect(tickRead.props.accessibilityLabel).toBe("Visualizada");
+
+    // delivered e read = ✓✓ (mesmo ícone); sent = ✓ (ícone diferente)
+    expect(glifoDelivered).toBe(glifoRead);
+    expect(glifoDelivered).not.toBe(glifoSent);
   });
 
   it("mensagem recebida não mostra check nenhum", async () => {

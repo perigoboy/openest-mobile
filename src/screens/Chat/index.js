@@ -228,7 +228,17 @@ export default function Chat({ navigation, route }) {
     deleteForEveryone,
     hideForMe,
     reload,
+    markAsRead,
   } = useChat(conversationId, user?.id);
+
+  // Voltar para a tela do Chat (sem remontar) também conta como leitura —
+  // o join só acontece na montagem/reconexão.
+  useEffect(() => {
+    if (!markAsRead) return undefined;
+    markAsRead();
+    const unsubscribe = navigation?.addListener?.("focus", () => markAsRead());
+    return unsubscribe;
+  }, [navigation, markAsRead]);
 
   const contactName = paramContactName || resolvedContact?.name || DEFAULT_CONTACT_NAME;
   const contactPhoto = paramContact.avatar || paramContact.photo || params.avatar || resolvedContact?.avatar;

@@ -312,6 +312,16 @@ export function useChat(conversationId, currentUserId) {
 
   // Convite de encontro: enviado como uma mensagem [CONVITE_EVENTO] (mesmo
   // formato do web), aparecendo como card no balão.
+  // Marca a conversa como lida (ao focar a tela). O servidor aplica a trava
+  // do Modo Discreto: se algum dos dois estiver discreto, para em entregue.
+  const markAsRead = useCallback(() => {
+    if (!hasConversation) return false;
+    const socket = getSocket();
+    if (!socket) return false;
+    socket.emit(SOCKET_EVENTS.MARK_READ, { conversation_id: conversationId });
+    return true;
+  }, [hasConversation, conversationId]);
+
   const sendInvite = useCallback(
     (payload) => {
       if (!hasConversation) return Promise.resolve(false);
@@ -386,6 +396,7 @@ export function useChat(conversationId, currentUserId) {
     sendImage,
     sendInvite,
     respondToInvite,
+    markAsRead,
     retryMessage,
     deleteForEveryone,
     hideForMe,
