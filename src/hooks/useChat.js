@@ -119,7 +119,7 @@ export function useChat(conversationId, currentUserId) {
       socket.emit(SOCKET_EVENTS.JOIN_CONVERSATION, conversationId);
       // Abriu a conversa ⇒ marca o que recebeu como lido (o servidor aplica
       // a trava do Modo Discreto antes de virar azul).
-      socket.emit(SOCKET_EVENTS.MARK_READ, { conversation_id: conversationId });
+      socket.emit(SOCKET_EVENTS.MARK_MESSAGES_READ, { conversation_id: conversationId });
     };
     const handleConnect = () => {
       setConnected(true);
@@ -129,7 +129,7 @@ export function useChat(conversationId, currentUserId) {
     // Com a conversa aberta, tudo que chega do contato já conta como lido.
     // O servidor decide se vira `read` (azul) ou para em `delivered` quando
     // alguém está em Modo Discreto.
-    const markRead = () => socket.emit(SOCKET_EVENTS.MARK_READ, { conversation_id: conversationId });
+    const markRead = () => socket.emit(SOCKET_EVENTS.MARK_MESSAGES_READ, { conversation_id: conversationId });
 
     const handleNewMessage = (raw) => {
       if (String(raw?.conversation_id) !== String(conversationId)) return;
@@ -318,7 +318,7 @@ export function useChat(conversationId, currentUserId) {
     if (!hasConversation) return false;
     const socket = getSocket();
     if (!socket) return false;
-    socket.emit(SOCKET_EVENTS.MARK_READ, { conversation_id: conversationId });
+    socket.emit(SOCKET_EVENTS.MARK_MESSAGES_READ, { conversation_id: conversationId });
     return true;
   }, [hasConversation, conversationId]);
 
