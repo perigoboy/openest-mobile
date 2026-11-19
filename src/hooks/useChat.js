@@ -18,11 +18,22 @@ import {
   getSocket,
   isSocketConnected,
 } from "../services/socket";
-import { fetchMessages, sendMessageRest } from "../services/messages";
+import {
+  deleteMessageForEveryone,
+  fetchMessages,
+  sendChatImage,
+  sendMessageRest,
+} from "../services/messages";
+import { getHiddenMessageIds, hideMessageForMe as persistHiddenMessage } from "../services/hiddenMessages";
+import { createEvent, respondInvite } from "../services/events";
 import { getFriendlyErrorMessage } from "../services/networkErrors";
 import {
   MESSAGE_STATUS,
+  applyInviteResponse,
+  applyStatusUpdate,
+  buildInviteMessage,
   confirmPendingMessage,
+  createPendingImageMessage,
   createPendingMessage,
   markMessageDeleted,
   mergeHistory,
@@ -49,6 +60,8 @@ export function useChat(conversationId, currentUserId) {
   const tempCounter = useRef(0);
   const mounted = useRef(true);
   const historyRequest = useRef(0);
+  // "Apagar p/ mim": ids escondidos só para este usuário (como o web).
+  const hiddenIds = useRef(new Set());
   // Conversa "atual": respostas que chegam depois de trocar de conversa são
   // descartadas, para não misturar mensagens de chats diferentes.
   const currentConversation = useRef(conversationId);
@@ -70,9 +83,13 @@ export function useChat(conversationId, currentUserId) {
     setLoading(true);
     setError(null);
     try {
-      const { messages: raw } = await fetchMessages(conversationId);
+      const [{ messages: raw }, hidden] = await Promise.all([
+        fetchMessages(conversationId),
+        getHiddenMessageIds(currentUserId),
+      ]);
       if (isStale()) return;
-      const history = normalizeMessageList(raw, currentUserId);
+      hiddenIds.current = new Set(hidden);
+      const history = normalizeMessageList(raw, currentUserId).filter((m) => !hiddenIds.current.has(m.id));
       setMessages((current) => mergeHistory(current, history));
     } catch (err) {
       if (isStale()) return;
@@ -98,18 +115,41 @@ export function useChat(conversationId, currentUserId) {
     const socket = getSocket();
     if (!socket) return undefined;
 
-    const join = () => socket.emit(SOCKET_EVENTS.JOIN_CONVERSATION, conversationId);
+    const join = () => {
+      socket.emit(SOCKET_EVENTS.JOIN_CONVERSATION, conversationId);
+      // Abriu a conversa ⇒ marca o que recebeu como lido (o servidor aplica
+      // a trava do Modo Discreto antes de virar azul).
+      socket.emit(SOCKET_EVENTS.MARK_READ, { conversation_id: conversationId });
+    };
     const handleConnect = () => {
       setConnected(true);
       join();
     };
     const handleDisconnect = () => setConnected(false);
+    // Com a conversa aberta, tudo que chega do contato já conta como lido.
+    // O servidor decide se vira `read` (azul) ou para em `delivered` quando
+    // alguém está em Modo Discreto.
+    const markRead = () => socket.emit(SOCKET_EVENTS.MARK_READ, { conversation_id: conversationId });
+
     const handleNewMessage = (raw) => {
       if (String(raw?.conversation_id) !== String(conversationId)) return;
+      if (raw?.id != null && hiddenIds.current.has(String(raw.id))) return; // oculta p/ mim
       setMessages((list) => mergeIncomingMessage(list, raw, currentUserId));
+      const isMine = currentUserId != null && String(raw?.sender_id) === String(currentUserId);
+      if (!isMine) markRead();
+    };
+
+    // Checks de entrega/leitura das MINHAS mensagens, em tempo real.
+    const handleStatusUpdated = (payload) => {
+      if (String(payload?.conversation_id) !== String(conversationId)) return;
+      setMessages((list) => applyStatusUpdate(list, payload.message_ids, payload.status));
     };
     const handleDeleted = (messageId) => {
       setMessages((list) => markMessageDeleted(list, messageId));
+    };
+    const handleInviteUpdated = (payload) => {
+      if (!payload?.messageId) return;
+      setMessages((list) => applyInviteResponse(list, payload.messageId, payload.status));
     };
     const handleUserTyping = (payload) => {
       // O servidor só repassa para os OUTROS da sala, mas o web antigo pode
@@ -127,6 +167,8 @@ export function useChat(conversationId, currentUserId) {
     socket.on("disconnect", handleDisconnect);
     socket.on(SOCKET_EVENTS.NEW_MESSAGE, handleNewMessage);
     socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleDeleted);
+    socket.on(SOCKET_EVENTS.INVITE_UPDATED, handleInviteUpdated);
+    socket.on(SOCKET_EVENTS.MESSAGE_STATUS_UPDATED, handleStatusUpdated);
     socket.on(SOCKET_EVENTS.USER_TYPING, handleUserTyping);
 
     setConnected(socket.connected);
@@ -137,6 +179,8 @@ export function useChat(conversationId, currentUserId) {
       socket.off("disconnect", handleDisconnect);
       socket.off(SOCKET_EVENTS.NEW_MESSAGE, handleNewMessage);
       socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleDeleted);
+      socket.off(SOCKET_EVENTS.INVITE_UPDATED, handleInviteUpdated);
+      socket.off(SOCKET_EVENTS.MESSAGE_STATUS_UPDATED, handleStatusUpdated);
       socket.off(SOCKET_EVENTS.USER_TYPING, handleUserTyping);
       clearTimeout(otherTypingTimer.current);
       clearTimeout(typingIdleTimer.current);
@@ -213,17 +257,48 @@ export function useChat(conversationId, currentUserId) {
     [conversationId, currentUserId]
   );
 
+  const nextTempId = useCallback(() => {
+    tempCounter.current += 1;
+    return `temp-${Date.now()}-${tempCounter.current}`;
+  }, []);
+
+  // `replyTo` (opcional) = mensagem citada. Fica só na bolha local (o backend
+  // não persiste a citação — igual ao web).
   const sendMessage = useCallback(
-    (rawText) => {
+    (rawText, replyTo = null) => {
       const text = String(rawText || "").trim();
       if (!text || !hasConversation) return Promise.resolve(false);
       stopTyping();
-      tempCounter.current += 1;
-      const tempId = `temp-${Date.now()}-${tempCounter.current}`;
-      setMessages((list) => [createPendingMessage(tempId, text), ...list]);
+      const tempId = nextTempId();
+      const quote = replyTo
+        ? { content: replyTo.text ?? replyTo.content, sender: replyTo.isMine ? "Você" : (replyTo.sender || null) }
+        : null;
+      setMessages((list) => [createPendingMessage(tempId, text, { replyTo: quote }), ...list]);
       return deliver(tempId, text);
     },
-    [deliver, hasConversation, stopTyping]
+    [deliver, hasConversation, stopTyping, nextTempId]
+  );
+
+  // Anexo de FOTO: bolha otimista com a prévia local → upload (Cloudinary) →
+  // confirma com a URL salva. O backend emite new_message para o outro lado.
+  const sendImage = useCallback(
+    async (asset) => {
+      if (!asset?.uri || !hasConversation) return false;
+      const sentTo = conversationId;
+      const stillHere = () => mounted.current && String(currentConversation.current) === String(sentTo);
+      const tempId = nextTempId();
+      setMessages((list) => [createPendingImageMessage(tempId, asset.uri), ...list]);
+      try {
+        const saved = await sendChatImage(conversationId, asset);
+        if (stillHere()) setMessages((list) => confirmPendingMessage(list, tempId, saved, currentUserId));
+        return true;
+      } catch (err) {
+        console.error("Erro ao enviar imagem:", err?.message || err);
+        if (stillHere()) setMessages((list) => setMessageStatus(list, tempId, MESSAGE_STATUS.FAILED));
+        return false;
+      }
+    },
+    [conversationId, currentUserId, hasConversation, nextTempId]
   );
 
   const retryMessage = useCallback(
@@ -235,6 +310,81 @@ export function useChat(conversationId, currentUserId) {
     [deliver]
   );
 
+  // Convite de encontro: enviado como uma mensagem [CONVITE_EVENTO] (mesmo
+  // formato do web), aparecendo como card no balão.
+  // Marca a conversa como lida (ao focar a tela). O servidor aplica a trava
+  // do Modo Discreto: se algum dos dois estiver discreto, para em entregue.
+  const markAsRead = useCallback(() => {
+    if (!hasConversation) return false;
+    const socket = getSocket();
+    if (!socket) return false;
+    socket.emit(SOCKET_EVENTS.MARK_READ, { conversation_id: conversationId });
+    return true;
+  }, [hasConversation, conversationId]);
+
+  const sendInvite = useCallback(
+    (payload) => {
+      if (!hasConversation) return Promise.resolve(false);
+      return sendMessage(buildInviteMessage({ ...payload, conversation_id: payload?.conversation_id ?? conversationId }));
+    },
+    [sendMessage, hasConversation, conversationId]
+  );
+
+  // Aceitar/recusar um convite recebido. `otherUserId` = quem enviou (contato
+  // do chat), usado para criar o encontro agendado no lado de quem aceita.
+  const respondToInvite = useCallback(
+    async (message, accept, otherUserId) => {
+      if (!message?.invite) return false;
+      const resposta = accept ? "aceite" : "recusado";
+      setMessages((list) => applyInviteResponse(list, message.id, resposta)); // otimista
+      try {
+        if (accept) {
+          await createEvent({
+            conversation_id: message.invite.conversation_id ?? conversationId,
+            other_user_id: otherUserId ?? message.invite.other_user_id,
+            titulo: message.invite.titulo,
+            scheduled_at: message.invite.scheduled_at,
+            local: message.invite.local || "",
+            nota: message.invite.nota || "",
+          });
+        }
+        await respondInvite(message.id, resposta);
+        return true;
+      } catch (err) {
+        console.error("Erro ao responder convite:", err?.response?.data || err?.message || err);
+        return false;
+      }
+    },
+    [conversationId]
+  );
+
+  // Apagar p/ TODOS (só mensagens próprias já salvas): marca apagada na hora e
+  // chama a API; o outro lado recebe via socket `message_deleted`.
+  const deleteForEveryone = useCallback(async (message) => {
+    if (!message || String(message.id).startsWith("temp-")) return false;
+    setMessages((list) => markMessageDeleted(list, message.id));
+    try {
+      await deleteMessageForEveryone(message.id);
+      return true;
+    } catch (err) {
+      console.error("Erro ao apagar mensagem:", err?.message || err);
+      return false;
+    }
+  }, []);
+
+  // Apagar p/ MIM: só esconde localmente (sem API), igual ao web.
+  const hideForMe = useCallback(
+    async (message) => {
+      if (!message) return false;
+      const id = String(message.id);
+      hiddenIds.current.add(id);
+      setMessages((list) => list.filter((m) => m.id !== id));
+      if (!id.startsWith("temp-")) await persistHiddenMessage(currentUserId, id);
+      return true;
+    },
+    [currentUserId]
+  );
+
   return {
     messages,
     loading,
@@ -243,7 +393,13 @@ export function useChat(conversationId, currentUserId) {
     otherTyping,
     notifyTyping,
     sendMessage,
+    sendImage,
+    sendInvite,
+    respondToInvite,
+    markAsRead,
     retryMessage,
+    deleteForEveryone,
+    hideForMe,
     reload: loadHistory,
   };
 }

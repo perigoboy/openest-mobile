@@ -18,6 +18,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Avatar, PhotoGallery, VerifiedBadge } from "../../components";
 import { colors, spacing, typography } from "../../styles/theme";
 import api from "../../services/api";
+import { useAuth } from "../../contexts/AuthContext";
+import { updateMyProfile } from "../../services/profile";
 import { uploadProfilePhoto } from "../../services/uploadPhoto";
 import {
   MAX_PROFILE_PHOTOS,
@@ -31,6 +33,8 @@ import {
 } from "../../services/profilePhotos";
 
 export default function Profile({ navigation }) {
+  const { updateUser } = useAuth();
+  const [saving, setSaving] = useState(false);
   const [userData, setUserData] = useState({
     name: "Carregando...",
     email: "carregando@email.com",
@@ -72,24 +76,32 @@ export default function Profile({ navigation }) {
         // T021: galeria ordenada vinda da API (`photos`), com fallback para
         // `foto_url` nos perfis antigos (mantém o Avatar funcionando).
         const profilePhotos = photosFromProfile(response.data);
+        // O backend guarda só `name` (nome completo). Dividimos em Nome +
+        // Sobrenome para a UI; no salvar juntamos de volta.
+        const fullName = response.data.name || response.data.username || "Usuário Openest";
+        const [firstName, ...rest] = String(fullName).trim().split(/\s+/);
+        const mainFoto = response.data.foto_url || profilePhotos[0] || "";
         setUserData({
           ...userData,
-          name: response.data.name || response.data.username || "Usuário Openest",
+          name: fullName,
           email: response.data.email || "",
-          foto_url: response.data.foto_url || profilePhotos[0] || "",
-          firstName: response.data.firstName || "",
-          lastName: response.data.lastName || "",
+          foto_url: mainFoto,
+          firstName: firstName || "",
+          lastName: rest.join(" "),
           gender: response.data.gender || "",
           username: response.data.username || "",
           language: response.data.language || "",
           education: response.data.education || "",
-          maritalStatus: response.data.maritalStatus || "",
+          // Estado civil ↔ status_relacionamento (o único campo persistido).
+          maritalStatus: response.data.status_relacionamento || "",
           cityNeighborhood: response.data.cityNeighborhood || "",
           bio: response.data.bio || "",
         });
         if (profilePhotos.length > 0) {
           setPhotos(profilePhotos);
         }
+        // Hidrata o contexto global (avatar do topo da Descoberta usa isto).
+        updateUser?.({ name: fullName, foto_url: mainFoto, photos: profilePhotos });
         // T022: o Switch reflete a flag salva no banco (modo_discreto).
         setModoDiscreto(response.data.modo_discreto === true);
         // T023: o selo "Verificado" reflete a aprovação da selfie no banco.
@@ -175,6 +187,7 @@ export default function Profile({ navigation }) {
       const nextPhotos = addPhoto(photos, url);
       setPhotos(nextPhotos);
       await persistProfilePhotos(nextPhotos);
+      updateUser?.({ photos: nextPhotos, foto_url: nextPhotos[0] || "" });
 
       Alert.alert("Sucesso", "Foto adicionada à galeria!");
     } catch (error) {
@@ -258,7 +271,9 @@ export default function Profile({ navigation }) {
 
       setUserData((prev) => ({ ...prev, foto_url: url }));
       // A primeira posição da galeria é a foto principal do perfil.
-      setPhotos((prev) => sanitizePhotos([url, ...prev.filter((uri) => uri !== url)]));
+      const nextPhotos = sanitizePhotos([url, ...photos.filter((uri) => uri !== url)]);
+      setPhotos(nextPhotos);
+      updateUser?.({ foto_url: url, photos: nextPhotos });
 
       Alert.alert("Sucesso", "Foto de perfil atualizada com sucesso!");
     } catch (error) {
@@ -313,6 +328,7 @@ export default function Profile({ navigation }) {
   async function applyPhotosChange(updatedPhotos) {
     setPhotos(updatedPhotos);
     setUserData((prev) => ({ ...prev, foto_url: updatedPhotos[0] || "" }));
+    updateUser?.({ photos: updatedPhotos, foto_url: updatedPhotos[0] || "" });
 
     try {
       await persistProfilePhotos(updatedPhotos);
@@ -326,11 +342,36 @@ export default function Profile({ navigation }) {
   }
 
   async function handleSave() {
+    if (saving) return;
+    setSaving(true);
     try {
-      // Aqui você enviaria os dados atualizados + fotos para a API
-      Alert.alert("Sucesso", "Dados de perfil actualizados com sucesso!");
+      // Mesmo contrato do web (PUT /api/users/perfil): junta Nome + Sobrenome
+      // em `name` e mapeia Estado civil → status_relacionamento. Campos sem
+      // coluna no backend (gênero, usuário, idioma...) são ignorados pela API.
+      const name = `${userData.firstName || ""} ${userData.lastName || ""}`.trim() || userData.name;
+      const payload = {
+        name,
+        bio: userData.bio || "",
+        status_relacionamento: userData.maritalStatus || undefined,
+        // Campos adicionais agora persistidos pela API (migração add-profile-fields).
+        gender: userData.gender || "",
+        username: userData.username || "",
+        language: userData.language || "",
+        education: userData.education || "",
+        cityNeighborhood: userData.cityNeighborhood || "",
+        photos,
+        foto_url: photos[0] || userData.foto_url || null,
+      };
+      const response = await updateMyProfile(payload);
+      const saved = (response && response.user) || {};
+      setUserData((prev) => ({ ...prev, name: saved.name || name }));
+      updateUser?.({ name: saved.name || name, foto_url: payload.foto_url, photos });
+      Alert.alert("Sucesso", "Perfil atualizado com sucesso!");
     } catch (error) {
-      Alert.alert("Erro", "Não foi possível guardar as alterações.");
+      console.error("Erro ao salvar perfil:", error?.response?.data || error?.message);
+      Alert.alert("Erro", error?.response?.data?.error || "Não foi possível guardar as alterações.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -527,25 +568,34 @@ export default function Profile({ navigation }) {
                 />
               </View>
               <Text style={styles.privacyHint}>
-                Oculta seu perfil do Discovery. Seus matches e conversas
-                continuam ativos e seu nome fica oculto nas notificações de
-                mensagem. Salvo automaticamente ao tocar no switch.
+                Oculta seu perfil do Discovery e desliga a confirmação de
+                leitura: enquanto estiver ativo, nem você nem a outra pessoa
+                veem os checks azuis de "visualizada" — as mensagens param em
+                entregue (2 checks cinzas) para os dois lados. Seus matches e
+                conversas continuam ativos. Salvo automaticamente.
               </Text>
               <Text style={styles.privacyStatus}>
                 {savingPrivacy
                   ? "Salvando..."
                   : modoDiscreto
-                    ? "Ativado — perfil oculto no Discovery"
-                    : "Desativado — perfil visível no Discovery"}
+                    ? "Ativado — perfil oculto e sem confirmação de leitura"
+                    : "Desativado — perfil visível e checks azuis ativos"}
               </Text>
             </View>
 
-            <TouchableOpacity accessibilityRole="button" style={styles.buttonWrapper} onPress={handleSave}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Salvar alterações do perfil"
+              testID="btn-save-profile"
+              style={styles.buttonWrapper}
+              onPress={handleSave}
+              disabled={saving}
+            >
               <LinearGradient
                 colors={['#7b2cbf', '#5a189a', '#3c096c']}
-                style={styles.button}
+                style={[styles.button, saving && { opacity: 0.6 }]}
               >
-                <Text style={styles.buttonText}>SALVAR</Text>
+                <Text style={styles.buttonText}>{saving ? "SALVANDO..." : "SALVAR"}</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -564,7 +614,9 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
+    // Espaço extra para a tab bar flutuante (≈68px + inset) não cobrir o
+    // botão SALVAR nem o último campo do formulário.
+    paddingBottom: 120,
     alignItems: "center",
   },
   logoContainer: {

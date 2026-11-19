@@ -1,4 +1,5 @@
 import api from './api';
+import { multipartUploadConfig } from './uploadConfig';
 
 /**
  * T020 — Envia a foto de perfil escolhida (galeria/câmera) para a API.
@@ -19,11 +20,7 @@ export async function uploadProfilePhoto(
   const formData = new FormData();
   formData.append('image', { uri, name: fileName, type: mimeType });
 
-  const response = await api.post('/api/users/upload-photo', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    // Upload de imagem pode exceder o timeout padrão de 10s da instância.
-    timeout: 60000,
-  });
+  const response = await api.post('/api/users/upload-photo', formData, multipartUploadConfig());
 
   const url = response.data && response.data.url;
   if (!url) {

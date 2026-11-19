@@ -5,6 +5,7 @@
 // com interação anterior e o modo discreto; o front apenas envia as preferências
 // e normaliza a resposta para o shape do DiscoveryCard.
 import api from "./api";
+import { resolveMediaUrl } from "../utils/mediaUrl";
 
 // Mesmo tamanho de página usado pelo web (openest-web Discovery.jsx).
 export const DISCOVERY_PAGE_SIZE = 10;
@@ -21,13 +22,12 @@ export function avatarFallback(name = "Openest") {
 // `photos` (URLs do Cloudinary, posição 0 = principal — T021), com `foto_url`
 // como legado/plan B.
 export function normalizeProfile(user) {
+  // resolveMediaUrl: URLs com localhost/127.0.0.1 viram o IP da API (senão
+  // não carregam no celular); URLs públicas (Cloudinary) passam direto.
   const photos = Array.isArray(user?.photos)
-    ? user.photos.filter((p) => typeof p === "string" && p.startsWith("http"))
+    ? user.photos.map((p) => resolveMediaUrl(p)).filter(Boolean)
     : [];
-  const photo =
-    photos[0] ||
-    (typeof user?.foto_url === "string" && user.foto_url.startsWith("http") ? user.foto_url : null) ||
-    avatarFallback(user?.name);
+  const photo = photos[0] || resolveMediaUrl(user?.foto_url) || avatarFallback(user?.name);
 
   const kind =
     user?.status_relacionamento === "casal"

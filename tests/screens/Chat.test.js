@@ -6,6 +6,7 @@ import React from "react";
 import { Alert, FlatList, Image, KeyboardAvoidingView } from "react-native";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import Chat from "../../src/screens/Chat";
+import { ToastProvider } from "../../src/components";
 import { useChat } from "../../src/hooks/useChat";
 import { findConversationContact, findConversationWithUser } from "../../src/services/conversations";
 import { blockUser } from "../../src/services/block";
@@ -21,14 +22,38 @@ jest.mock("../../src/contexts/AuthContext", () => ({
   useAuth: () => ({ user: { id: "me" } }),
 }));
 
+jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn().mockResolvedValue(true) }));
+jest.mock("expo-location", () => ({
+  requestForegroundPermissionsAsync: jest.fn().mockResolvedValue({ status: "granted" }),
+  getCurrentPositionAsync: jest.fn().mockResolvedValue({ coords: { latitude: -3.7, longitude: -38.5 } }),
+  Accuracy: { Balanced: 3 },
+}));
+jest.mock("expo-image-picker", () => ({
+  requestMediaLibraryPermissionsAsync: jest.fn().mockResolvedValue({ status: "granted" }),
+  requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ status: "granted" }),
+  launchImageLibraryAsync: jest.fn().mockResolvedValue({ canceled: false, assets: [{ uri: "file:///a.jpg" }] }),
+  launchCameraAsync: jest.fn().mockResolvedValue({ canceled: true }),
+}));
+jest.mock("../../src/services/giphy", () => ({ searchGifs: jest.fn().mockResolvedValue([]) }));
+jest.mock("@react-native-community/datetimepicker", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  return { __esModule: true, default: (props) => React.createElement(View, props) };
+});
+
 const MESSAGES = [
   { id: "4", text: "Também gostei! 😊", time: "14:32", isMine: false, isImage: false, status: "sent" },
   { id: "3", text: "Adorei nosso papo de ontem!", time: "14:30", isMine: true, isImage: false, status: "sent" },
 ];
 
 const sendMessage = jest.fn();
+const sendImage = jest.fn();
+const sendInvite = jest.fn();
+const respondToInvite = jest.fn().mockResolvedValue(true);
 const notifyTyping = jest.fn();
 const retryMessage = jest.fn();
+const deleteForEveryone = jest.fn();
+const hideForMe = jest.fn();
 const reload = jest.fn();
 
 function mockChatState(overrides = {}) {
@@ -40,7 +65,12 @@ function mockChatState(overrides = {}) {
     otherTyping: false,
     notifyTyping,
     sendMessage,
+    sendImage,
+    sendInvite,
+    respondToInvite,
     retryMessage,
+    deleteForEveryone,
+    hideForMe,
     reload,
     ...overrides,
   });
@@ -53,7 +83,11 @@ function renderChat(params = { conversationId: 17, contact: { id: "u2", name: "A
     navigate: jest.fn(),
     ...navOverrides,
   };
-  const utils = render(<Chat navigation={navigation} route={{ params }} />);
+  const utils = render(
+    <ToastProvider>
+      <Chat navigation={navigation} route={{ params }} />
+    </ToastProvider>
+  );
   return { navigation, ...utils };
 }
 
@@ -166,7 +200,7 @@ describe("Chat — envio", () => {
     fireEvent.changeText(screen.getByTestId("chat-message-input"), "  Até mais!  ");
     fireEvent.press(screen.getByTestId("chat-send-button"));
 
-    expect(sendMessage).toHaveBeenCalledWith("Até mais!");
+    expect(sendMessage).toHaveBeenCalledWith("Até mais!", null);
     expect(screen.getByTestId("chat-message-input").props.value).toBe("");
   });
 
@@ -176,7 +210,7 @@ describe("Chat — envio", () => {
     fireEvent.changeText(screen.getByTestId("chat-message-input"), "Oi");
     fireEvent(screen.getByTestId("chat-message-input"), "submitEditing");
 
-    expect(sendMessage).toHaveBeenCalledWith("Oi");
+    expect(sendMessage).toHaveBeenCalledWith("Oi", null);
   });
 
   it("não envia mensagem vazia ou só com espaços", () => {
@@ -195,7 +229,7 @@ describe("Chat — envio", () => {
     renderChat();
 
     expect(screen.getByText("Não enviada · toque para tentar de novo")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("chat-retry-temp-7"));
+    fireEvent.press(screen.getByTestId("chat-message-touch-temp-7"));
     expect(retryMessage).toHaveBeenCalledWith(failed);
   });
 
@@ -273,10 +307,10 @@ describe("Chat — navegação e contato", () => {
       id === "1" ? { id: "u1", name: "Primeira Pessoa", avatar: null } : new Promise(() => {})
     );
     const navigation = { navigate: jest.fn() };
-    const { rerender } = render(<Chat navigation={navigation} route={{ params: { conversationId: "1" } }} />);
+    const { rerender } = render(<ToastProvider><Chat navigation={navigation} route={{ params: { conversationId: "1" } }} /></ToastProvider>);
     expect(await screen.findByText("Primeira Pessoa")).toBeTruthy();
 
-    rerender(<Chat navigation={navigation} route={{ params: { conversationId: "2" } }} />);
+    rerender(<ToastProvider><Chat navigation={navigation} route={{ params: { conversationId: "2" } }} /></ToastProvider>);
 
     expect(screen.queryByText("Primeira Pessoa")).toBeNull();
     expect(screen.getByText("Conversa")).toBeTruthy();
@@ -316,7 +350,7 @@ describe("Chat — conversa ativa (não notificar o que já está na tela)", () 
         return () => delete listeners[event];
       }),
     };
-    render(<Chat navigation={navigation} route={{ params: { conversationId: 17, contact: { id: "u2", name: "Ana" } } }} />);
+    render(<ToastProvider><Chat navigation={navigation} route={{ params: { conversationId: 17, contact: { id: "u2", name: "Ana" } } }} /></ToastProvider>);
 
     act(() => listeners.blur());
     expect(getActiveConversation()).toBeNull();
@@ -327,11 +361,219 @@ describe("Chat — conversa ativa (não notificar o que já está na tela)", () 
 
   it("não marca como ativa se a tela abriu sem foco", async () => {
     render(
-      <Chat
-        navigation={{ navigate: jest.fn(), isFocused: () => false, addListener: () => () => {} }}
-        route={{ params: { conversationId: 17, contact: { id: "u2", name: "Ana" } } }}
-      />
+      <ToastProvider>
+        <Chat
+          navigation={{ navigate: jest.fn(), isFocused: () => false, addListener: () => () => {} }}
+          route={{ params: { conversationId: 17, contact: { id: "u2", name: "Ana" } } }}
+        />
+      </ToastProvider>
     );
     await waitFor(() => expect(getActiveConversation()).toBeNull());
+  });
+});
+
+describe("Chat — menu de anexos (+)", () => {
+  const ImagePicker = require("expo-image-picker");
+  const Location = require("expo-location");
+
+  it("abre o menu de anexos ao tocar no +", () => {
+    renderChat();
+    fireEvent.press(screen.getByTestId("chat-attach-button"));
+    expect(screen.getByTestId("attachment-photo")).toBeTruthy();
+    expect(screen.getByTestId("attachment-location")).toBeTruthy();
+    expect(screen.getByTestId("attachment-gif")).toBeTruthy();
+  });
+
+  it("selecionar GIF abre o seletor de GIFs", async () => {
+    renderChat();
+    fireEvent.press(screen.getByTestId("chat-attach-button"));
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("attachment-gif"));
+    });
+    expect(screen.getByTestId("gif-picker")).toBeTruthy();
+  });
+
+  it("partilhar localização envia no mesmo formato do web", async () => {
+    renderChat();
+    fireEvent.press(screen.getByTestId("chat-attach-button"));
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("attachment-location"));
+    });
+    await waitFor(() => expect(Location.getCurrentPositionAsync).toHaveBeenCalled());
+    const [text, reply] = sendMessage.mock.calls.at(-1);
+    expect(text).toContain("📍 Localização partilhada");
+    expect(text).toContain("maps.google.com/maps?q=-3.7,-38.5");
+    expect(reply).toBeNull();
+  });
+
+  it("foto: escolher da galeria envia a imagem", async () => {
+    renderChat();
+    fireEvent.press(screen.getByTestId("chat-attach-button"));
+    fireEvent.press(screen.getByTestId("attachment-photo"));
+    // Alert "Enviar foto" → "Escolher da galeria"
+    const [, , buttons] = Alert.alert.mock.calls.at(-1);
+    await act(async () => {
+      await buttons.find((b) => b.text === "Escolher da galeria").onPress();
+    });
+    expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalled();
+    expect(sendImage).toHaveBeenCalledWith({ uri: "file:///a.jpg" });
+  });
+});
+
+describe("Chat — ações da mensagem (long press)", () => {
+  const Clipboard = require("expo-clipboard");
+
+  function longPress(id) {
+    fireEvent(screen.getByTestId(`chat-message-touch-${id}`), "longPress");
+    return Alert.alert.mock.calls.at(-1)[2]; // os botões
+  }
+
+  it("mensagem recebida: Responder, Copiar e Apagar p/ mim (sem Apagar p/ todos)", () => {
+    renderChat();
+    const buttons = longPress("4"); // msg do outro
+    const texts = buttons.map((b) => b.text);
+    expect(texts).toEqual(["↩️ Responder", "📋 Copiar", "🗑️ Apagar p/ mim", "Cancelar"]);
+  });
+
+  it("minha mensagem inclui Apagar p/ todos", () => {
+    renderChat();
+    const texts = longPress("3").map((b) => b.text); // msg minha
+    expect(texts).toContain("🗑️ Apagar p/ todos");
+  });
+
+  it("Responder abre a barra de citação acima do campo", () => {
+    renderChat();
+    const buttons = longPress("4");
+    act(() => buttons.find((b) => b.text === "↩️ Responder").onPress());
+    expect(screen.getByTestId("chat-reply-banner")).toBeTruthy();
+    // cancelar a resposta fecha a barra
+    fireEvent.press(screen.getByTestId("chat-reply-cancel"));
+    expect(screen.queryByTestId("chat-reply-banner")).toBeNull();
+  });
+
+  it("Copiar usa a área de transferência", async () => {
+    renderChat();
+    const buttons = longPress("4");
+    await act(async () => {
+      await buttons.find((b) => b.text === "📋 Copiar").onPress();
+    });
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith("Também gostei! 😊");
+  });
+
+  it("Apagar p/ mim chama hideForMe", () => {
+    renderChat();
+    const buttons = longPress("4");
+    act(() => buttons.find((b) => b.text === "🗑️ Apagar p/ mim").onPress());
+    expect(hideForMe).toHaveBeenCalledWith(expect.objectContaining({ id: "4" }));
+  });
+
+  it("Apagar p/ todos chama deleteForEveryone", () => {
+    renderChat();
+    const buttons = longPress("3");
+    act(() => buttons.find((b) => b.text === "🗑️ Apagar p/ todos").onPress());
+    expect(deleteForEveryone).toHaveBeenCalledWith(expect.objectContaining({ id: "3" }));
+  });
+});
+
+describe("Chat — card de localização", () => {
+  const { Linking } = require("react-native");
+
+  it("renderiza o card e abre o mapa ao tocar", () => {
+    const openURL = jest.spyOn(Linking, "openURL").mockImplementation(() => {});
+    mockChatState({
+      messages: [
+        { id: "7", text: "📍 Localização partilhada:\nhttp://maps.google.com/maps?q=1,2", time: "10:00", isMine: false, isImage: false, status: "sent", location: { mapsUrl: "http://maps.google.com/maps?q=1,2", latitude: 1, longitude: 2 } },
+      ],
+    });
+    renderChat();
+    fireEvent.press(screen.getByTestId("chat-location-card"));
+    expect(openURL).toHaveBeenCalledWith("http://maps.google.com/maps?q=1,2");
+    openURL.mockRestore();
+  });
+});
+
+describe("Chat — agendamento de encontro", () => {
+  it("botão de calendário abre o modal de agendar", () => {
+    renderChat();
+    fireEvent.press(screen.getByTestId("chat-schedule-button"));
+    expect(screen.getByTestId("schedule-modal")).toBeTruthy();
+  });
+
+  it("convite recebido renderiza o card com Aceitar/Recusar", () => {
+    mockChatState({
+      messages: [
+        { id: "20", text: "[CONVITE_EVENTO]{}", time: "10:00", isMine: false, isImage: false, status: "sent",
+          invite: { titulo: "Café", local: "Centro", scheduled_at: "2026-11-18T15:07:00" } },
+      ],
+    });
+    renderChat();
+    expect(screen.getByTestId("invite-card")).toBeTruthy();
+    expect(screen.getByText("Café")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("invite-accept"));
+    expect(respondToInvite).toHaveBeenCalledWith(expect.objectContaining({ id: "20" }), true, "u2");
+  });
+
+  it("convite enviado por mim mostra 'Aguardando resposta…'", () => {
+    mockChatState({
+      messages: [
+        { id: "21", text: "[CONVITE_EVENTO]{}", time: "10:00", isMine: true, isImage: false, status: "sent",
+          invite: { titulo: "Café", scheduled_at: "2026-11-18T15:07:00" } },
+      ],
+    });
+    renderChat();
+    expect(screen.getByTestId("invite-waiting")).toBeTruthy();
+    expect(screen.queryByTestId("invite-accept")).toBeNull();
+  });
+});
+
+// --- Checks de envio/entrega/leitura (estilo WhatsApp) --------------------
+describe("Chat — checks de status", () => {
+  const mine = (status) => [{ id: "1", text: "oi", time: "19:16", isMine: true, isImage: false, status }];
+
+  // O glifo renderizado prova QUAL ícone foi usado: `checkmark` (1 check)
+  // vs `checkmark-done` (2 checks). Guarda contra o bug de "1 check só".
+  const glifo = (node) => String(node.props.children);
+
+  it("enviada: 1 check só", async () => {
+    mockChatState({ messages: mine("sent") });
+    renderChat();
+    const tick = await screen.findByTestId("tick-sent");
+    expect(tick.props.accessibilityLabel).toBe("Enviada");
+    expect(screen.queryByTestId("tick-delivered")).toBeNull();
+    expect(screen.queryByTestId("tick-read")).toBeNull();
+  });
+
+  it("entregue e visualizada usam o MESMO ícone de 2 checks — e nunca o de 1", async () => {
+    mockChatState({ messages: mine("sent") });
+    const a = renderChat();
+    const glifoSent = glifo(await screen.findByTestId("tick-sent"));
+    a.unmount();
+
+    mockChatState({ messages: mine("delivered") });
+    const b = renderChat();
+    const tickDelivered = await screen.findByTestId("tick-delivered");
+    const glifoDelivered = glifo(tickDelivered);
+    expect(tickDelivered.props.accessibilityLabel).toBe("Entregue");
+    b.unmount();
+
+    mockChatState({ messages: mine("read") });
+    renderChat();
+    const tickRead = await screen.findByTestId("tick-read");
+    const glifoRead = glifo(tickRead);
+    expect(tickRead.props.accessibilityLabel).toBe("Visualizada");
+
+    // delivered e read = ✓✓ (mesmo ícone); sent = ✓ (ícone diferente)
+    expect(glifoDelivered).toBe(glifoRead);
+    expect(glifoDelivered).not.toBe(glifoSent);
+  });
+
+  it("mensagem recebida não mostra check nenhum", async () => {
+    mockChatState({
+      messages: [{ id: "2", text: "oi", time: "19:16", isMine: false, isImage: false, status: "read" }],
+    });
+    renderChat();
+    await waitFor(() => expect(screen.getByText("oi")).toBeTruthy());
+    expect(screen.queryByTestId("tick-read")).toBeNull();
+    expect(screen.queryByTestId("tick-sent")).toBeNull();
   });
 });

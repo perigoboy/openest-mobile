@@ -3,6 +3,7 @@
 // O envio "normal" é pelo socket (src/hooks/useChat.js); a rota REST é usada
 // quando o socket está desconectado, para a mensagem nunca se perder.
 import api from "./api";
+import { multipartUploadConfig } from "./uploadConfig";
 
 export const MESSAGES_PAGE_SIZE = 30;
 
@@ -29,5 +30,32 @@ export async function sendMessageRest(conversationId, content) {
     conversation_id: conversationId,
     content,
   });
+  return data;
+}
+
+// Anexo de FOTO — mesmo endpoint do web (POST /api/mensagens/imagem, multer +
+// Cloudinary, campo "image"). O backend salva, emite new_message na sala e
+// devolve a mensagem salva (content = URL do Cloudinary).
+export async function sendChatImage(conversationId, asset) {
+  const uri = asset?.uri;
+  if (conversationId == null || !uri) {
+    throw new Error("Imagem inválida para envio.");
+  }
+  const formData = new FormData();
+  formData.append("conversation_id", String(conversationId));
+  formData.append("image", {
+    uri,
+    name: asset.fileName || `chat-${Date.now()}.jpg`,
+    type: asset.mimeType || "image/jpeg",
+  });
+  const { data } = await api.post("/api/mensagens/imagem", formData, multipartUploadConfig());
+  return data;
+}
+
+// Apagar p/ TODOS — mesma rota do web (DELETE /api/mensagens/:id). O backend
+// troca o conteúdo por "🚫 Mensagem apagada" e emite message_deleted na sala.
+export async function deleteMessageForEveryone(messageId) {
+  if (messageId == null) throw new Error("Mensagem inválida.");
+  const { data } = await api.delete(`/api/mensagens/${encodeURIComponent(messageId)}`);
   return data;
 }

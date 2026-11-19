@@ -18,12 +18,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { DiscoveryCard, Loader } from "../../components";
+import { Avatar, DiscoveryCard, Loader } from "../../components";
 import { useAuth } from "../../contexts/AuthContext";
 import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPreferences";
 import { avatarFallback, fetchCompatibleProfiles } from "../../services/discovery";
 import { likeProfile } from "../../services/interactions";
 import { distanceKm } from "../../services/userLocation";
+import { fetchMyProfile } from "../../services/profile";
+import { resolveMediaUrl } from "../../utils/mediaUrl";
 import { REPORT_REASONS, submitReport } from "../../services/moderation";
 import { blockUser } from "../../services/block";
 import { colors, radius, spacing, typography } from "../../styles/theme";
@@ -64,7 +66,7 @@ function shortFilterLabel(prefs) {
 }
 
 export default function Discovery({ navigation }) {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [index, setIndex] = useState(0);
   const [prefs, setPrefs] = useState(DEFAULT_PREFERENCES);
   const [reportTarget, setReportTarget] = useState(null);
@@ -82,6 +84,10 @@ export default function Discovery({ navigation }) {
   const userPhoto = Array.isArray(user?.photos)
     ? user.photos.find((photo) => typeof photo === "string" && photo.startsWith("http"))
     : null;
+  // Foto principal do usuário logado (Cloudinary) para o avatar do topo.
+  // Sem foto → o Avatar mostra as iniciais do nome (nunca foto de teste fixa).
+  const myAvatarUri =
+    resolveMediaUrl(userPhoto || (typeof user?.foto_url === "string" ? user.foto_url : null)) || undefined;
   const visibleDeck = deck.filter(
     (item) => !hiddenProfileIds.current.has(item.id)
   );
@@ -101,6 +107,22 @@ export default function Discovery({ navigation }) {
       setLoading(false);
     }
   }, []);
+
+  // Hidrata o contexto com o perfil real (foto do Cloudinary) ao abrir a
+  // Descoberta, para o avatar do topo não depender de visitar o Perfil antes.
+  useEffect(() => {
+    let active = true;
+    fetchMyProfile()
+      .then((data) => {
+        if (!active || !data) return;
+        const photos = Array.isArray(data.photos) ? data.photos : [];
+        updateUser?.({ name: data.name, foto_url: data.foto_url, photos });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [updateUser]);
 
   useEffect(() => {
     let mounted = true;
@@ -275,17 +297,30 @@ export default function Discovery({ navigation }) {
             accessibilityRole="button"
             accessibilityLabel="Abrir configurações"
           >
-            <Image source={{ uri: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80" }} style={styles.avatar} />
+            <Avatar uri={myAvatarUri} name={user?.name} size={40} />
           </TouchableOpacity>
           <View style={styles.brandCenter} pointerEvents="none">
             <Image testID="discovery-brand" source={require("../../../assets/logo-chama.png")} style={styles.brandLogo} resizeMode="contain" />
           </View>
-          <TouchableOpacity testID="btn-filters" onPress={openFilters} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Abrir filtros de busca">
-            <BlurView intensity={55} tint="dark" style={styles.pill}>
-              <Ionicons name="options" size={16} color="#fff" />
-              <Text style={styles.pillText} numberOfLines={1}>{shortFilterLabel(prefs)}</Text>
-            </BlurView>
-          </TouchableOpacity>
+          <View style={styles.topRight}>
+            <TouchableOpacity
+              testID="btn-encontros"
+              onPress={() => navigation?.navigate?.("Encontros")}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir meus encontros"
+            >
+              <BlurView intensity={55} tint="dark" style={styles.pillIcon}>
+                <Ionicons name="calendar" size={18} color="#fff" />
+              </BlurView>
+            </TouchableOpacity>
+            <TouchableOpacity testID="btn-filters" onPress={openFilters} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Abrir filtros de busca">
+              <BlurView intensity={55} tint="dark" style={styles.pill}>
+                <Ionicons name="options" size={16} color="#fff" />
+                <Text style={styles.pillText} numberOfLines={1}>{shortFilterLabel(prefs)}</Text>
+              </BlurView>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.cardArea}>
@@ -505,6 +540,12 @@ const styles = StyleSheet.create({
   avatar: { width: "100%", height: "100%", borderRadius: 20 },
   brandCenter: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center", zIndex: 1 },
   brandLogo: { width: 72, height: 48 },
+  topRight: { flexDirection: "row", alignItems: "center", columnGap: 8 },
+  pillIcon: {
+    width: 40, height: 40, borderRadius: 20, overflow: "hidden",
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.25)",
+  },
   pill: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 132, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.85)", backgroundColor: "rgba(42,10,85,0.45)", zIndex: 2, flexShrink: 1 },
   pillText: { fontSize: 12, fontWeight: "700", color: "#fff", flexShrink: 1 },
   cardArea: { flex: 1, justifyContent: "center", paddingVertical: 12, overflow: "hidden" },

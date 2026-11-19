@@ -13,6 +13,7 @@ import { act, render, screen } from "@testing-library/react-native";
 import useWindowDimensions from "react-native/Libraries/Utilities/useWindowDimensions";
 import DiscoveryCard, { CARD_SCREEN_RATIO } from "../../src/components/DiscoveryCard";
 import NetworkErrorBanner from "../../src/components/NetworkErrorBanner";
+import { ToastProvider } from "../../src/components";
 import Chat from "../../src/screens/Chat";
 import Matches from "../../src/screens/Matches";
 import { __resetNetworkErrorsForTests, enqueueFailedRequest } from "../../src/services/networkErrors";
@@ -87,7 +88,7 @@ describe.each(DEVICES)("%s", (_, device) => {
     mockChatMessages = [
       { id: "1", text: "https://res.cloudinary.com/x/foto.jpg", time: "10:00", isMine: false, isImage: true, status: "sent" },
     ];
-    render(<Chat navigation={{ navigate: jest.fn() }} route={{ params: { conversationId: 1, contact: { id: "u", name: "Ana" } } }} />);
+    render(<ToastProvider><Chat navigation={{ navigate: jest.fn() }} route={{ params: { conversationId: 1, contact: { id: "u", name: "Ana" } } }} /></ToastProvider>);
 
     const image = screen.getByLabelText("Imagem enviada na conversa");
     const { width } = StyleSheet.flatten(image.props.style);
@@ -98,7 +99,7 @@ describe.each(DEVICES)("%s", (_, device) => {
 
   it("nome longo no cabeçalho do chat fica em uma linha (com reticências)", () => {
     mockChatMessages = [];
-    render(<Chat navigation={{ navigate: jest.fn() }} route={{ params: { conversationId: 1, contact: { id: "u", name: LONG_NAME } } }} />);
+    render(<ToastProvider><Chat navigation={{ navigate: jest.fn() }} route={{ params: { conversationId: 1, contact: { id: "u", name: LONG_NAME } } }} /></ToastProvider>);
 
     const title = screen.getByText(LONG_NAME);
     expect(title.props.numberOfLines).toBe(1);

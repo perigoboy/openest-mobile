@@ -7,6 +7,7 @@ import { act, render, screen, waitFor } from "@testing-library/react-native";
 import { GlassTabBar, TAB_LABELS } from "../../src/routes/AppRoutes";
 import Input from "../../src/components/Input";
 import NetworkErrorBanner from "../../src/components/NetworkErrorBanner";
+import { ToastProvider } from "../../src/components";
 import Login from "../../src/screens/Login";
 import Chat from "../../src/screens/Chat";
 import Matches from "../../src/screens/Matches";
@@ -116,7 +117,7 @@ describe("telas principais: nenhum controle sem nome", () => {
   });
 
   it("Chat: botões só com ícone têm nome", () => {
-    render(<Chat navigation={{ navigate: jest.fn() }} route={{ params: { conversationId: 1, contact: { id: "u", name: "Ana" } } }} />);
+    render(<ToastProvider><Chat navigation={{ navigate: jest.fn() }} route={{ params: { conversationId: 1, contact: { id: "u", name: "Ana" } } }} /></ToastProvider>);
 
     expect(screen.getByLabelText("Voltar para conversas")).toBeTruthy();
     expect(screen.getByLabelText("Mais opções")).toBeTruthy();

@@ -16,12 +16,17 @@ export const SOCKET_EVENTS = {
   SEND_MESSAGE: "send_message",
   NEW_MESSAGE: "new_message",
   MESSAGE_DELETED: "message_deleted",
+  INVITE_UPDATED: "invite_updated",
   NOTIFICATION: "notification",
   NEW_MATCH: "new_match",
   // T046 — indicador de "digitando…" (mesmos eventos do web)
   TYPING_START: "typing_start",
   TYPING_STOP: "typing_stop",
   USER_TYPING: "user_typing",
+  // Confirmação de entrega/leitura (checks estilo WhatsApp)
+  MARK_DELIVERED: "mark_delivered",
+  MARK_READ: "mark_read",
+  MESSAGE_STATUS_UPDATED: "message_status_updated",
 };
 
 export const SOCKET_ACK_TIMEOUT_MS = 8000;

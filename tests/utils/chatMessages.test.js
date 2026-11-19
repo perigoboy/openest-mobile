@@ -2,6 +2,8 @@
 // T045 — funções puras que mantêm a lista do chat sem duplicadas.
 import {
   MESSAGE_STATUS,
+  applyStatusUpdate,
+  statusFromRaw,
   confirmPendingMessage,
   createPendingMessage,
   formatMessageTime,
@@ -124,7 +126,7 @@ describe("status e exclusão", () => {
 describe("mergeHistory", () => {
   it("mantém o que chegou pelo socket durante o carregamento e ordena do mais novo ao mais antigo", () => {
     const live = normalizeMessage({ id: 30, content: "ao vivo", createdAt: "2026-11-17T12:00:00Z" }, ME);
-    const pending = createPendingMessage("t1", "enviando", new Date("2026-11-17T11:00:00Z"));
+    const pending = createPendingMessage("t1", "enviando", { now: new Date("2026-11-17T11:00:00Z") });
     const history = normalizeMessageList(
       [
         { id: 20, content: "b", createdAt: "2026-11-17T10:00:00Z" },
@@ -140,5 +142,167 @@ describe("mergeHistory", () => {
   it("não duplica mensagens que estão nos dois lados", () => {
     const history = normalizeMessageList([{ id: 1, content: "a" }], ME);
     expect(mergeHistory(history, history)).toHaveLength(1);
+  });
+});
+
+import {
+  isImageContent,
+  parseLocationMessage,
+  createPendingImageMessage,
+} from "../../src/utils/chatMessages";
+
+describe("isImageContent", () => {
+  it("detecta Cloudinary, extensões de imagem e GIFs do Giphy/Tenor", () => {
+    expect(isImageContent("https://res.cloudinary.com/x/a")).toBe(true);
+    expect(isImageContent("https://cdn.x/a.jpg")).toBe(true);
+    expect(isImageContent("https://media.giphy.com/media/abc/giphy.gif")).toBe(true);
+    expect(isImageContent("https://tenor.com/view/abc.gif")).toBe(true);
+    expect(isImageContent("só um texto")).toBe(false);
+    expect(isImageContent("")).toBe(false);
+  });
+});
+
+describe("parseLocationMessage", () => {
+  it("extrai a URL e as coordenadas do formato do web", () => {
+    const loc = parseLocationMessage("📍 Localização partilhada:\nhttp://maps.google.com/maps?q=-3.73,-38.52");
+    expect(loc).toMatchObject({ latitude: -3.73, longitude: -38.52 });
+    expect(loc.mapsUrl).toContain("maps.google.com");
+  });
+  it("devolve null para texto normal", () => {
+    expect(parseLocationMessage("oi, tudo bem?")).toBeNull();
+  });
+});
+
+describe("normalizeMessage — imagem, localização e citação", () => {
+  it("marca imagem e não confunde com localização", () => {
+    const m = normalizeMessage({ id: 1, content: "https://res.cloudinary.com/x/a.jpg" }, ME);
+    expect(m.isImage).toBe(true);
+    expect(m.location).toBeNull();
+  });
+  it("preenche location para mensagem de localização", () => {
+    const m = normalizeMessage({ id: 2, content: "📍 Localização partilhada:\nhttp://maps.google.com/maps?q=1,2" }, ME);
+    expect(m.isImage).toBe(false);
+    expect(m.location).toMatchObject({ latitude: 1, longitude: 2 });
+  });
+  it("lê a citação de resposta quando presente", () => {
+    const m = normalizeMessage({ id: 3, content: "resposta", reply_to_content: "original", reply_to_sender: "Você" }, ME);
+    expect(m.replyTo).toEqual({ content: "original", sender: "Você" });
+  });
+});
+
+describe("createPendingMessage/Image — reply e imagem otimista", () => {
+  it("carrega a citação na bolha otimista", () => {
+    const m = createPendingMessage("t1", "oi", { replyTo: { content: "cit", sender: "Você" } });
+    expect(m.replyTo).toEqual({ content: "cit", sender: "Você" });
+    expect(m.status).toBe("pending");
+  });
+  it("imagem otimista mostra a uri local", () => {
+    const m = createPendingImageMessage("t1", "file:///local/a.jpg");
+    expect(m).toMatchObject({ isImage: true, text: "file:///local/a.jpg", status: "pending" });
+  });
+});
+
+describe("confirmPendingMessage — preserva a citação local", () => {
+  it("mantém o replyTo da bolha otimista ao confirmar", () => {
+    const list = [createPendingMessage("t1", "oi", { replyTo: { content: "cit", sender: "Você" } })];
+    const next = confirmPendingMessage(list, "t1", { id: 9, sender_id: ME, content: "oi" }, ME);
+    expect(next[0]).toMatchObject({ id: "9", status: "sent" });
+    expect(next[0].replyTo).toEqual({ content: "cit", sender: "Você" });
+  });
+});
+
+import {
+  INVITE_TAG,
+  buildInviteMessage,
+  parseInviteMessage,
+  inviteStatusFromText,
+  applyInviteResponse,
+} from "../../src/utils/chatMessages";
+
+describe("convite de encontro", () => {
+  const payload = { conversation_id: 9, other_user_id: "u2", titulo: "Café", scheduled_at: "2026-11-18T15:07", local: "Centro", nota: "" };
+
+  it("buildInviteMessage usa a TAG + JSON e parseInviteMessage reverte", () => {
+    const text = buildInviteMessage(payload);
+    expect(text.startsWith(INVITE_TAG)).toBe(true);
+    expect(parseInviteMessage(text)).toEqual(payload);
+  });
+
+  it("parseInviteMessage devolve null para texto normal ou JSON inválido", () => {
+    expect(parseInviteMessage("oi")).toBeNull();
+    expect(parseInviteMessage("[CONVITE_EVENTO]{quebrado")).toBeNull();
+  });
+
+  it("normalizeMessage marca invite e não trata como imagem/localização", () => {
+    const m = normalizeMessage({ id: 1, sender_id: ME, content: buildInviteMessage(payload) }, ME);
+    expect(m.invite).toEqual(payload);
+    expect(m.isImage).toBe(false);
+    expect(m.location).toBeNull();
+    expect(m.inviteStatus).toBeNull();
+  });
+
+  it("inviteStatusFromText reconhece aceite/recusado", () => {
+    expect(inviteStatusFromText("✅ Convite Aceite!")).toBe("accepted");
+    expect(inviteStatusFromText("❌ Convite Recusado")).toBe("rejected");
+    expect(inviteStatusFromText("oi")).toBeNull();
+  });
+
+  it("applyInviteResponse troca o conteúdo pelo status e remove o card", () => {
+    const list = [normalizeMessage({ id: 1, sender_id: ME, content: buildInviteMessage(payload) }, ME)];
+    const accepted = applyInviteResponse(list, "1", "aceite");
+    expect(accepted[0].invite).toBeNull();
+    expect(accepted[0].text).toBe("✅ Convite Aceite!");
+    expect(accepted[0].inviteStatus).toBe("accepted");
+    const rejected = applyInviteResponse(list, "1", "recusado");
+    expect(rejected[0].text).toBe("❌ Convite Recusado");
+  });
+});
+
+// --- Confirmação de envio/entrega/leitura (checks estilo WhatsApp) ---------
+describe("status de entrega/leitura", () => {
+  it("statusFromRaw lê o campo status da API", () => {
+    expect(statusFromRaw({ status: "read" })).toBe(MESSAGE_STATUS.READ);
+    expect(statusFromRaw({ status: "delivered" })).toBe(MESSAGE_STATUS.DELIVERED);
+    expect(statusFromRaw({ status: "sent" })).toBe(MESSAGE_STATUS.SENT);
+  });
+
+  it("statusFromRaw cai nos carimbos quando não vem `status` (payload antigo)", () => {
+    expect(statusFromRaw({ read_at: "2026-11-18T19:16:00Z" })).toBe(MESSAGE_STATUS.READ);
+    expect(statusFromRaw({ delivered_at: "2026-11-18T19:16:00Z" })).toBe(MESSAGE_STATUS.DELIVERED);
+    expect(statusFromRaw({})).toBe(MESSAGE_STATUS.SENT);
+  });
+
+  it("normalizeMessage traz o status vindo da API", () => {
+    const msg = normalizeMessage(
+      { id: 1, content: "oi", sender_id: "me", status: "read" },
+      "me"
+    );
+    expect(msg.status).toBe(MESSAGE_STATUS.READ);
+  });
+
+  it("applyStatusUpdate avança só as MINHAS mensagens listadas", () => {
+    const list = [
+      { id: "1", isMine: true, status: MESSAGE_STATUS.SENT },
+      { id: "2", isMine: true, status: MESSAGE_STATUS.SENT },
+      { id: "3", isMine: false, status: MESSAGE_STATUS.SENT },
+    ];
+    const out = applyStatusUpdate(list, ["1", "3"], MESSAGE_STATUS.READ);
+    expect(out[0].status).toBe(MESSAGE_STATUS.READ);
+    expect(out[1].status).toBe(MESSAGE_STATUS.SENT); // não estava na lista
+    expect(out[2].status).toBe(MESSAGE_STATUS.SENT); // recebida: sem checks
+  });
+
+  it("applyStatusUpdate nunca regride (read não volta para delivered)", () => {
+    const list = [{ id: "1", isMine: true, status: MESSAGE_STATUS.READ }];
+    const out = applyStatusUpdate(list, ["1"], MESSAGE_STATUS.DELIVERED);
+    expect(out[0].status).toBe(MESSAGE_STATUS.READ);
+  });
+
+  it("Modo Discreto: o servidor manda 'delivered' e os checks nunca ficam azuis", () => {
+    const list = [{ id: "1", isMine: true, status: MESSAGE_STATUS.SENT }];
+    // Com Modo Discreto ligado o backend emite delivered (nunca read).
+    const out = applyStatusUpdate(list, ["1"], MESSAGE_STATUS.DELIVERED);
+    expect(out[0].status).toBe(MESSAGE_STATUS.DELIVERED);
+    expect(out[0].status).not.toBe(MESSAGE_STATUS.READ);
   });
 });

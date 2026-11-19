@@ -40,6 +40,8 @@ jest.mock("expo-linking", () => ({
 
 jest.mock("../src/services/notifications", () => ({
   configureNotificationHandler: jest.fn(),
+  isExpoGo: () => false,
+  buildInAppNotificationFromSocket: jest.fn(),
   registerForPushNotificationsAsync: jest.fn().mockResolvedValue(null),
   unregisterPushNotificationsAsync: jest.fn().mockResolvedValue(false),
   areNotificationsEnabled: jest.fn().mockResolvedValue(true),

@@ -1,10 +1,10 @@
 // tests/services/messages.test.js — T045 (rotas REST do chat)
 import api from "../../src/services/api";
-import { fetchMessages, sendMessageRest } from "../../src/services/messages";
+import { deleteMessageForEveryone, fetchMessages, sendChatImage, sendMessageRest } from "../../src/services/messages";
 
 jest.mock("../../src/services/api", () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn() },
+  default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() },
 }));
 
 beforeEach(() => jest.clearAllMocks());
@@ -34,5 +34,29 @@ describe("sendMessageRest", () => {
 
     await expect(sendMessageRest(17, "oi")).resolves.toEqual({ id: 3, content: "oi" });
     expect(api.post).toHaveBeenCalledWith("/api/mensagens", { conversation_id: 17, content: "oi" });
+  });
+});
+
+describe("sendChatImage", () => {
+  it("envia multipart para o endpoint de imagem do chat", async () => {
+    api.post.mockResolvedValue({ data: { id: 5, content: "https://res.cloudinary.com/x/a.jpg" } });
+    const saved = await sendChatImage(7, { uri: "file:///a.jpg", fileName: "a.jpg", mimeType: "image/jpeg" });
+    expect(saved.id).toBe(5);
+    const [url, body, config] = api.post.mock.calls[0];
+    expect(url).toBe("/api/mensagens/imagem");
+    // Sem Content-Type fixo: o RN gera o boundary (config traz transformRequest).
+    expect(typeof config.transformRequest).toBe("function");
+    expect(body).toBeInstanceOf(FormData);
+  });
+  it("rejeita imagem sem uri", async () => {
+    await expect(sendChatImage(7, {})).rejects.toThrow("Imagem inválida");
+  });
+});
+
+describe("deleteMessageForEveryone", () => {
+  it("chama DELETE /api/mensagens/:id", async () => {
+    api.delete.mockResolvedValue({ data: { success: true } });
+    await deleteMessageForEveryone(9);
+    expect(api.delete).toHaveBeenCalledWith("/api/mensagens/9");
   });
 });

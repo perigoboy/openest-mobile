@@ -2,12 +2,23 @@
 // T045 — lógica do chat em tempo real com um socket FALSO (sem rede).
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { TYPING_EXPIRE_MS, TYPING_IDLE_MS, useChat } from "../../src/hooks/useChat";
-import { fetchMessages, sendMessageRest } from "../../src/services/messages";
+import { deleteMessageForEveryone, fetchMessages, sendChatImage, sendMessageRest } from "../../src/services/messages";
+import { getHiddenMessageIds, hideMessageForMe as persistHiddenMessage } from "../../src/services/hiddenMessages";
 import { __mockSocket as socket, emitWithAck } from "../../src/services/socket";
 
 jest.mock("../../src/services/messages", () => ({
   fetchMessages: jest.fn(),
   sendMessageRest: jest.fn(),
+  sendChatImage: jest.fn(),
+  deleteMessageForEveryone: jest.fn(),
+}));
+jest.mock("../../src/services/hiddenMessages", () => ({
+  getHiddenMessageIds: jest.fn().mockResolvedValue([]),
+  hideMessageForMe: jest.fn().mockResolvedValue([]),
+}));
+jest.mock("../../src/services/events", () => ({
+  createEvent: jest.fn().mockResolvedValue({}),
+  respondInvite: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock("../../src/services/socket", () => {
@@ -34,6 +45,7 @@ jest.mock("../../src/services/socket", () => {
       SEND_MESSAGE: "send_message",
       NEW_MESSAGE: "new_message",
       MESSAGE_DELETED: "message_deleted",
+      INVITE_UPDATED: "invite_updated",
       TYPING_START: "typing_start",
       TYPING_STOP: "typing_stop",
       USER_TYPING: "user_typing",
@@ -430,5 +442,131 @@ describe("useChat — T046 indicador de digitando", () => {
 
     unmount();
     expect(socket.emit).toHaveBeenCalledWith("typing_stop", { conversation_id: 10, user_id: ME });
+  });
+});
+
+describe("useChat — anexos e ações da mensagem", () => {
+  it("sendImage: bolha otimista com a uri local e troca pela URL salva", async () => {
+    sendChatImage.mockResolvedValue({ id: 20, conversation_id: 10, sender_id: ME, content: "https://res.cloudinary.com/x/a.jpg" });
+    const { result } = await renderChatHook();
+
+    await act(async () => {
+      await result.current.sendImage({ uri: "file:///a.jpg" });
+    });
+
+    expect(sendChatImage).toHaveBeenCalledWith(10, { uri: "file:///a.jpg" });
+    expect(result.current.messages[0]).toMatchObject({ id: "20", isImage: true, status: "sent" });
+  });
+
+  it("sendImage: falha marca a bolha como 'falhou'", async () => {
+    sendChatImage.mockRejectedValue(new Error("upload falhou"));
+    const { result } = await renderChatHook();
+    await act(async () => {
+      await result.current.sendImage({ uri: "file:///a.jpg" });
+    });
+    expect(result.current.messages[0].status).toBe("failed");
+  });
+
+  it("sendMessage com resposta leva a citação na bolha otimista", async () => {
+    emitWithAck.mockReturnValue(new Promise(() => {})); // fica pendente
+    const { result } = await renderChatHook();
+    const original = result.current.messages.find((m) => m.text === "Tudo ótimo!");
+
+    act(() => {
+      result.current.sendMessage("claro!", original);
+    });
+
+    expect(result.current.messages[0]).toMatchObject({ text: "claro!", status: "pending" });
+    expect(result.current.messages[0].replyTo).toEqual({ content: "Tudo ótimo!", sender: null });
+  });
+
+  it("deleteForEveryone marca apagada e chama a API", async () => {
+    deleteMessageForEveryone.mockResolvedValue({ success: true });
+    const { result } = await renderChatHook();
+    const mine = result.current.messages.find((m) => m.isMine);
+
+    await act(async () => {
+      await result.current.deleteForEveryone(mine);
+    });
+
+    expect(deleteMessageForEveryone).toHaveBeenCalledWith(mine.id);
+    expect(result.current.messages.find((m) => m.id === mine.id).text).toBe("🚫 Mensagem apagada");
+  });
+
+  it("hideForMe remove da lista e persiste o id escondido", async () => {
+    const { result } = await renderChatHook();
+    const msg = result.current.messages[0];
+
+    await act(async () => {
+      await result.current.hideForMe(msg);
+    });
+
+    expect(result.current.messages.find((m) => m.id === msg.id)).toBeUndefined();
+    expect(persistHiddenMessage).toHaveBeenCalledWith(ME, msg.id);
+  });
+
+  it("mensagens escondidas não voltam ao carregar o histórico", async () => {
+    getHiddenMessageIds.mockResolvedValueOnce(["1"]); // esconde a msg id 1
+    const { result } = await renderChatHook();
+    expect(result.current.messages.map((m) => m.id)).toEqual(["2"]);
+  });
+
+  it("mensagem escondida que chega pelo socket é ignorada", async () => {
+    getHiddenMessageIds.mockResolvedValueOnce(["99"]);
+    const { result } = await renderChatHook();
+    act(() => socket.fire("new_message", { id: 99, conversation_id: 10, sender_id: OTHER, content: "oculta" }));
+    expect(result.current.messages.some((m) => m.id === "99")).toBe(false);
+  });
+});
+
+describe("useChat — convite de encontro (agendamento)", () => {
+  const { createEvent, respondInvite } = require("../../src/services/events");
+  const INVITE = { conversation_id: 10, other_user_id: OTHER, titulo: "Café", scheduled_at: "2026-11-18T15:07", local: "Centro", nota: "" };
+
+  it("sendInvite envia a mensagem [CONVITE_EVENTO] como card otimista", async () => {
+    emitWithAck.mockReturnValue(new Promise(() => {})); // pendente
+    const { result } = await renderChatHook();
+    act(() => {
+      result.current.sendInvite(INVITE);
+    });
+    const [event, payload] = emitWithAck.mock.calls.at(-1);
+    expect(event).toBe("send_message");
+    expect(payload.content.startsWith("[CONVITE_EVENTO]")).toBe(true);
+    expect(result.current.messages[0].invite).toMatchObject({ titulo: "Café" });
+  });
+
+  it("respondToInvite (aceitar) cria o evento, responde e troca pelo status", async () => {
+    const { result } = await renderChatHook();
+    act(() => socket.fire("new_message", { id: 50, conversation_id: 10, sender_id: OTHER, content: `[CONVITE_EVENTO]${JSON.stringify(INVITE)}` }));
+    const invite = result.current.messages.find((m) => m.invite);
+    expect(invite).toBeTruthy();
+
+    await act(async () => {
+      await result.current.respondToInvite(invite, true, "u-sender");
+    });
+
+    expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({ other_user_id: "u-sender", titulo: "Café" }));
+    expect(respondInvite).toHaveBeenCalledWith(invite.id, "aceite");
+    expect(result.current.messages.find((m) => m.id === invite.id).text).toBe("✅ Convite Aceite!");
+  });
+
+  it("respondToInvite (recusar) não cria evento", async () => {
+    const { result } = await renderChatHook();
+    act(() => socket.fire("new_message", { id: 51, conversation_id: 10, sender_id: OTHER, content: `[CONVITE_EVENTO]${JSON.stringify(INVITE)}` }));
+    const invite = result.current.messages.find((m) => m.invite);
+    createEvent.mockClear();
+    await act(async () => {
+      await result.current.respondToInvite(invite, false, "u-sender");
+    });
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(respondInvite).toHaveBeenCalledWith(invite.id, "recusado");
+    expect(result.current.messages.find((m) => m.id === invite.id).text).toBe("❌ Convite Recusado");
+  });
+
+  it("evento invite_updated do socket atualiza a mensagem", async () => {
+    const { result } = await renderChatHook();
+    act(() => socket.fire("new_message", { id: 52, conversation_id: 10, sender_id: ME, content: `[CONVITE_EVENTO]${JSON.stringify(INVITE)}` }));
+    act(() => socket.fire("invite_updated", { messageId: "52", status: "aceite" }));
+    expect(result.current.messages.find((m) => m.id === "52").text).toBe("✅ Convite Aceite!");
   });
 });
