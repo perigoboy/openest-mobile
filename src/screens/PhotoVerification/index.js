@@ -25,11 +25,11 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { VerifiedBadge, useToast } from "../../components";
-import { colors, spacing, typography } from "../../styles/theme";
+import { radius, spacing, typography } from "../../styles/theme";
+import { useTheme, useThemedStyles } from "../../contexts/ThemeContext";
 import api from "../../services/api";
 import { submitSelfieForVerification } from "../../services/verification";
 
@@ -41,6 +41,8 @@ const STEPS = [
 ];
 
 export default function PhotoVerification({ navigation }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const toast = useToast();
 
   // Status atual vindo do banco (GET /api/users/perfil → verificado).
@@ -159,280 +161,206 @@ export default function PhotoVerification({ navigation }) {
     setSelfieUri("");
   }
   return (
-    <LinearGradient colors={["#2c003e", "#1a0026", "#0d0012"]} style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Cabeçalho com volta para as Configurações */}
-          <View style={styles.header}>
-            <TouchableOpacity
-              testID="btn-go-back"
-              style={styles.backButton}
-              onPress={handleGoBack}
-              accessibilityRole="button"
-              accessibilityLabel="Voltar"
-            >
-              <Ionicons name="chevron-back" size={22} color="#fff" />
-            </TouchableOpacity>
-            <Text style={styles.screenTitle}>Verificação de Foto</Text>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          testID="btn-go-back"
+          style={styles.backButton}
+          onPress={handleGoBack}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar"
+        >
+          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.screenTitle} accessibilityRole="header">Verificação de Foto</Text>
+        <View style={styles.backButton} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {loading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={colors.accent} />
+            <Text style={styles.loadingText}>Consultando seu status...</Text>
           </View>
-
-          {loading ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="large" color={colors.primaryLight} />
-              <Text style={styles.loadingText}>Consultando seu status...</Text>
+        ) : verificado ? (
+          /* ---------------- Já verificado: selo + estado final --------------- */
+          <View style={styles.card} testID="panel-verificado">
+            <View style={styles.successIcon}>
+              <Ionicons name="shield-checkmark" size={32} color={colors.successText} />
             </View>
-          ) : verificado ? (
-            /* ---------------- Já verificado: selo + estado final --------------- */
-            <View style={styles.card} testID="panel-verificado">
-              <View style={styles.successIcon}>
-                <Ionicons name="shield-checkmark" size={36} color={colors.success} />
-              </View>
-              <VerifiedBadge />
-              <Text style={styles.cardTitle}>Seu perfil está verificado</Text>
-              <Text style={styles.cardText}>
-                A selfie foi conferida com as fotos do seu perfil. O selo Verificado
-                já aparece no seu perfil e nos cards do Discovery.
-              </Text>
-              <TouchableOpacity
-                testID="btn-reverify"
-                style={styles.secondaryButtonWrapper}
-                onPress={handleReverify}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-              >
-                <Text style={styles.secondaryButtonText}>REFIZER VERIFICAÇÃO</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            /* ---------------- Ainda não verificado: captura + envio ----------- */
-            <>
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Como funciona</Text>
-                {STEPS.map((step, index) => (
-                  <View key={step} style={styles.stepRow}>
-                    <View style={styles.stepNumber}>
-                      <Text style={styles.stepNumberText}>{index + 1}</Text>
-                    </View>
-                    <Text style={styles.stepText}>{step}</Text>
+            <VerifiedBadge />
+            <Text style={styles.cardTitle}>Seu perfil está verificado</Text>
+            <Text style={styles.cardText}>
+              A selfie foi conferida com as fotos do seu perfil. O selo Verificado
+              já aparece no seu perfil e nos cards do Discovery.
+            </Text>
+            <TouchableOpacity
+              testID="btn-reverify"
+              style={styles.secondaryButton}
+              onPress={handleReverify}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+            >
+              <Text style={styles.secondaryButtonText}>Refazer verificação</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          /* ---------------- Ainda não verificado: captura + envio ----------- */
+          <>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Como funciona</Text>
+              {STEPS.map((step, index) => (
+                <View key={step} style={styles.stepRow}>
+                  <View style={styles.stepNumber}>
+                    <Text style={styles.stepNumberText}>{index + 1}</Text>
                   </View>
-                ))}
-              </View>
-
-              {selfieUri ? (
-                <View style={styles.previewCard}>
-                  <Image
-                    testID="image-selfie-preview"
-                    source={{ uri: selfieUri }}
-                    style={styles.previewImage}
-                  />
-                  <Text style={styles.previewHint}>
-                    Confira se o rosto está nítido antes de enviar.
-                  </Text>
-
-                  <TouchableOpacity
-                    testID="btn-submit-selfie"
-                    style={styles.primaryButtonWrapper}
-                    onPress={handleSubmit}
-                    disabled={submitting}
-                    activeOpacity={0.8}
-                    accessibilityRole="button"
-                  >
-                    <LinearGradient
-                      colors={["#7b2cbf", "#5a189a", "#3c096c"]}
-                      style={[styles.primaryButton, submitting && styles.buttonDisabled]}
-                    >
-                      {submitting ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Text style={styles.primaryButtonText}>ENVIAR SELFIE</Text>
-                      )}
-                    </LinearGradient>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    testID="btn-retake-selfie"
-                    style={styles.secondaryButtonWrapper}
-                    onPress={handleRetake}
-                    disabled={submitting}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.secondaryButtonText}>TIRAR OUTRA SELFIE</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.stepText}>{step}</Text>
                 </View>
-              ) : (
+              ))}
+            </View>
+
+            {selfieUri ? (
+              <View style={styles.previewCard}>
+                <Image
+                  testID="image-selfie-preview"
+                  source={{ uri: selfieUri }}
+                  style={styles.previewImage}
+                />
+                <Text style={styles.previewHint}>
+                  Confira se o rosto está nítido antes de enviar.
+                </Text>
+
                 <TouchableOpacity
-                  testID="btn-take-selfie"
-                  style={styles.primaryButtonWrapper}
-                  onPress={handleTakeSelfie}
-                  disabled={capturing}
-                  activeOpacity={0.8}
+                  testID="btn-submit-selfie"
+                  style={[styles.primaryButton, submitting && styles.buttonDisabled]}
+                  onPress={handleSubmit}
+                  disabled={submitting}
+                  activeOpacity={0.85}
                   accessibilityRole="button"
                 >
-                  <LinearGradient
-                    colors={["#7b2cbf", "#5a189a", "#3c096c"]}
-                    style={[styles.primaryButton, capturing && styles.buttonDisabled]}
-                  >
-                    {capturing ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <>
-                        <Ionicons name="camera" size={18} color="#fff" />
-                        <Text style={[styles.primaryButtonText, styles.buttonTextWithIcon]}>
-                          TIRAR SELFIE
-                        </Text>
-                      </>
-                    )}
-                  </LinearGradient>
+                  {submitting ? (
+                    <ActivityIndicator size="small" color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Enviar selfie</Text>
+                  )}
                 </TouchableOpacity>
-              )}
-            </>
-          )}
-        </ScrollView>
-      </SafeAreaView>
-    </LinearGradient>
+
+                <TouchableOpacity
+                  testID="btn-retake-selfie"
+                  style={styles.secondaryButton}
+                  onPress={handleRetake}
+                  disabled={submitting}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.secondaryButtonText}>Tirar outra selfie</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                testID="btn-take-selfie"
+                style={[styles.primaryButton, capturing && styles.buttonDisabled]}
+                onPress={handleTakeSelfie}
+                disabled={capturing}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+              >
+                {capturing ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <>
+                    <Ionicons name="camera-outline" size={18} color={colors.onPrimary} />
+                    <Text style={[styles.primaryButtonText, styles.buttonTextWithIcon]}>Tirar selfie</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scrollContent: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: spacing.sm,
-  },
-  screenTitle: {
-    ...typography.h2,
-    color: "#fff",
-  },
-  loadingBox: {
-    alignItems: "center",
-    paddingVertical: spacing.xl,
-  },
-  loadingText: {
-    ...typography.caption,
-    color: "#d7b8e8",
-    marginTop: spacing.sm,
-  },
-  card: {
-    backgroundColor: "rgba(255,255,255,0.96)",
-    borderRadius: 16,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    alignItems: "flex-start",
-  },
-  cardTitle: {
-    ...typography.h3,
-    color: "#2d3436",
-    marginBottom: spacing.sm,
-    textAlign: "center",
-    alignSelf: "stretch",
-  },
-  cardText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#636e72",
-    marginTop: spacing.sm,
-    textAlign: "center",
-    alignSelf: "stretch",
-  },
-  successIcon: {
-    alignSelf: "center",
-    marginBottom: spacing.sm,
-  },
-  stepRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginTop: spacing.sm,
-  },
-  stepNumber: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.primary,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: spacing.sm,
-  },
-  stepNumberText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  stepText: {
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#576574",
-  },
-  previewCard: {
-    backgroundColor: "rgba(255,255,255,0.96)",
-    borderRadius: 16,
-    padding: spacing.md,
-    alignItems: "center",
-  },
-  previewImage: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: "#f1f2f6",
-  },
-  previewHint: {
-    ...typography.caption,
-    color: "#636e72",
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-    textAlign: "center",
-  },
-  primaryButtonWrapper: {
-    width: "100%",
-    borderRadius: 12,
-    overflow: "hidden",
-    marginTop: spacing.sm,
-  },
-  primaryButton: {
-    height: 48,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  primaryButtonText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "bold",
-    letterSpacing: 1,
-  },
-  buttonTextWithIcon: {
-    marginLeft: spacing.sm,
-  },
-  secondaryButtonWrapper: {
-    marginTop: spacing.md,
-    alignItems: "center",
-    paddingVertical: spacing.sm,
-    alignSelf: "stretch",
-  },
-  secondaryButtonText: {
-    fontSize: 14,
-    color: "#636e72",
-    fontWeight: "600",
-    letterSpacing: 0.5,
-  },
-});
-
+const createStyles = (colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    header: {
+      height: 56,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: spacing.xs,
+      backgroundColor: colors.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    backButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+    screenTitle: { ...typography.h3, color: colors.textPrimary },
+    scrollContent: { padding: spacing.md, paddingBottom: spacing.xl, rowGap: spacing.md },
+    loadingBox: { alignItems: "center", paddingVertical: spacing.xl, rowGap: spacing.sm },
+    loadingText: { ...typography.body, color: colors.textSecondary },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      padding: spacing.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      alignItems: "stretch",
+      rowGap: spacing.sm,
+    },
+    successIcon: {
+      alignSelf: "center",
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.successSoft,
+    },
+    cardTitle: { ...typography.h3, color: colors.textPrimary },
+    cardText: { ...typography.body, fontSize: 14, lineHeight: 20, color: colors.textSecondary },
+    stepRow: { flexDirection: "row", alignItems: "center", columnGap: 12 },
+    stepNumber: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.primarySoft,
+    },
+    stepNumberText: { ...typography.label, color: colors.accent },
+    stepText: { flex: 1, ...typography.body, fontSize: 14, color: colors.textPrimary },
+    previewCard: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      padding: spacing.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      alignItems: "center",
+      rowGap: spacing.sm,
+    },
+    previewImage: { width: 200, height: 200, borderRadius: 100, backgroundColor: colors.surfaceMuted },
+    previewHint: { ...typography.caption, fontSize: 13, color: colors.textSecondary, textAlign: "center" },
+    primaryButton: {
+      alignSelf: "stretch",
+      height: 50,
+      borderRadius: radius.md,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.primary,
+    },
+    primaryButtonText: { ...typography.bodyStrong, fontSize: 16, color: colors.onPrimary },
+    buttonTextWithIcon: { marginLeft: 8 },
+    buttonDisabled: { opacity: 0.6 },
+    secondaryButton: {
+      alignSelf: "stretch",
+      height: 46,
+      borderRadius: radius.md,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    secondaryButtonText: { ...typography.bodyStrong, color: colors.accent },
+  });

@@ -1,22 +1,17 @@
+// T012 — Cadastro. Visual do tema (claro/escuro) sobre o AuthLayout.
+// Os toques usam TouchableOpacity (o teste da tela simula esse componente).
 import React, { useState } from 'react';
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Alert,
-  Image,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { StyleSheet, Text, TouchableOpacity, View, Alert, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Input } from '../../components';
+import AuthLayout from '../../components/AuthLayout';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme, useThemedStyles } from '../../contexts/ThemeContext';
+import { radius, spacing, typography } from '../../styles/theme';
 
 export default function Register({ navigation }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -67,217 +62,158 @@ export default function Register({ navigation }) {
   }
 
   return (
-    <LinearGradient colors={['#3a0ca3', '#1e003b']} style={styles.container}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
+    <AuthLayout
+      title="Criar conta"
+      subtitle="Leva menos de um minuto."
+      footer={
+        <TouchableOpacity
+          testID="link-login"
+          accessibilityRole="button"
+          onPress={() => navigation.goBack()}
         >
-          <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-            <View style={styles.cardContainer}>
-              <BlurView intensity={50} tint="dark" style={styles.blurCard}>
-                <Image 
-                  source={require('../../../assets/logo-completa.png')} 
-                  style={styles.logo} 
-                  resizeMode="contain"
-                />
-                
-                <View style={styles.formContainer}>
-                  <Text style={styles.label}>Nome</Text>
-                  <TextInput
-                    accessibilityLabel="Nome"
-                    testID="input-name"
-                    style={styles.input}
-                    placeholder="Enter your name"
-                    placeholderTextColor="rgba(255,255,255,0.6)"
-                    value={name}
-                    onChangeText={setName}
-                  />
+          <Text style={styles.footerText}>
+            Já tem uma conta? <Text style={styles.footerLink}>Entrar</Text>
+          </Text>
+        </TouchableOpacity>
+      }
+    >
+      <Input
+        label="Nome"
+        accessibilityLabel="Nome"
+        testID="input-name"
+        placeholder="Como você quer ser chamado"
+        autoCapitalize="words"
+        autoComplete="name"
+        value={name}
+        onChangeText={setName}
+      />
 
-                  <Text style={styles.label}>Email</Text>
-                  <TextInput
-                    accessibilityLabel="E-mail"
-                    testID="input-email"
-                    style={styles.input}
-                    placeholder="Enter your email"
-                    placeholderTextColor="rgba(255,255,255,0.6)"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    value={email}
-                    onChangeText={setEmail}
-                  />
+      <Input
+        label="E-mail"
+        accessibilityLabel="E-mail"
+        testID="input-email"
+        placeholder="voce@email.com"
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoComplete="email"
+        value={email}
+        onChangeText={setEmail}
+      />
 
-                  <Text style={styles.label}>Senha</Text>
-                  <TextInput
-                    accessibilityLabel="Senha"
-                    testID="input-password"
-                    style={styles.input}
-                    placeholder="Enter your password"
-                    placeholderTextColor="rgba(255,255,255,0.6)"
-                    secureTextEntry
-                    value={password}
-                    onChangeText={setPassword}
-                  />
+      <Input
+        label="Senha"
+        accessibilityLabel="Senha"
+        testID="input-password"
+        placeholder="Mínimo de 6 caracteres"
+        secureTextEntry
+        secureToggle
+        autoComplete="new-password"
+        value={password}
+        onChangeText={setPassword}
+      />
 
-                  {/* Checkbox de Termos de Uso (LGPD) */}
-                  <View style={styles.termsContainer}>
-                    <TouchableOpacity
-                      testID="checkbox-terms"
-                      accessibilityRole="button"
-                      style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}
-                      onPress={() => setAcceptedTerms(!acceptedTerms)}
-                    />
-                    <View style={styles.termsTextContainer}>
-                      <Text style={styles.termsText}>Li e concordo com os </Text>
-                      <TouchableOpacity accessibilityRole="link" accessibilityLabel="Ler os Termos de Uso" testID="link-terms" onPress={handleOpenTerms}>
-                        <Text style={styles.termsLink}>Termos de Uso e LGPD</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
+      {/* Consentimento dos Termos de Uso (LGPD) */}
+      <View style={styles.termsContainer}>
+        <TouchableOpacity
+          testID="checkbox-terms"
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: acceptedTerms }}
+          accessibilityLabel="Aceito os Termos de Uso e a Política de Privacidade"
+          style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}
+          onPress={() => setAcceptedTerms(!acceptedTerms)}
+        >
+          {acceptedTerms ? <Ionicons name="checkmark" size={16} color={colors.onPrimary} /> : null}
+        </TouchableOpacity>
+        <View style={styles.termsTextContainer}>
+          <Text style={styles.termsText}>Li e concordo com os </Text>
+          <TouchableOpacity accessibilityRole="link" accessibilityLabel="Ler os Termos de Uso" testID="link-terms" onPress={handleOpenTerms}>
+            <Text style={styles.termsLink}>Termos de Uso e LGPD</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-                  <TouchableOpacity
-                    testID="btn-submit"
-                    accessibilityRole="button"
-                    style={[styles.button, submitting && styles.buttonDisabled]}
-                    onPress={handleRegister}
-                    disabled={submitting}
-                  >
-                    <Text style={styles.buttonText}>
-                      {submitting ? 'Cadastrando...' : 'Cadastrar'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    testID="link-login"
-                    accessibilityRole="button"
-                    style={styles.backLink}
-                    onPress={() => navigation.goBack()}
-                  >
-                    <Text style={styles.backText}>Já tem uma conta? Faça login</Text>
-                  </TouchableOpacity>
-                </View>
-              </BlurView>
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </LinearGradient>
+      <TouchableOpacity
+        testID="btn-submit"
+        accessibilityRole="button"
+        style={[styles.button, submitting && styles.buttonDisabled]}
+        onPress={handleRegister}
+        disabled={submitting}
+        activeOpacity={0.85}
+      >
+        {submitting ? <ActivityIndicator color={colors.onPrimary} style={styles.buttonSpinner} /> : null}
+        <Text style={styles.buttonText}>
+          {submitting ? 'Cadastrando...' : 'Cadastrar'}
+        </Text>
+      </TouchableOpacity>
+    </AuthLayout>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-  },
-  cardContainer: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  blurCard: {
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-  },
-  logo: {
-    width: 120,
-    height: 120,
-    marginBottom: 30,
-    shadowColor: '#fff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-  },
-  formContainer: {
-    width: '100%',
-  },
-  label: {
-    fontSize: 14,
-    color: '#fff',
-    fontWeight: '600',
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  input: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    height: 50,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-    marginBottom: 20,
-    color: '#fff',
-  },
-  button: {
-    backgroundColor: '#7209b7',
-    height: 50,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 5,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  termsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.6)',
-    marginRight: 12,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  checkboxChecked: {
-    backgroundColor: '#7209b7',
-    borderColor: '#fff',
-  },
-  termsTextContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    flex: 1,
-  },
-  termsText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
-  },
-  termsLink: {
-    fontSize: 14,
-    color: '#fff',
-    fontWeight: 'bold',
-    textDecorationLine: 'underline',
-  },
-  backLink: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  backText: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 14,
-  },
-});
+const createStyles = (colors) =>
+  StyleSheet.create({
+    termsContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      columnGap: 10,
+      marginTop: spacing.xs,
+      marginBottom: spacing.lg,
+    },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      backgroundColor: colors.inputBg,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    checkboxChecked: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    termsTextContainer: {
+      flex: 1,
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+    },
+    termsText: {
+      ...typography.body,
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    termsLink: {
+      ...typography.body,
+      fontSize: 14,
+      color: colors.accent,
+      fontWeight: '600',
+    },
+    button: {
+      height: 50,
+      borderRadius: radius.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+    },
+    buttonDisabled: {
+      opacity: 0.6,
+    },
+    buttonSpinner: {
+      marginRight: 8,
+    },
+    buttonText: {
+      ...typography.bodyStrong,
+      fontSize: 16,
+      color: colors.onPrimary,
+    },
+    footerText: {
+      ...typography.body,
+      color: colors.textSecondary,
+    },
+    footerLink: {
+      color: colors.accent,
+      fontWeight: '700',
+    },
+  });

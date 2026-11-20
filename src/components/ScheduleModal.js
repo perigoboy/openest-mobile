@@ -15,7 +15,8 @@ import {
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, radius, spacing, typography } from "../styles/theme";
+import { radius, spacing, typography } from "../styles/theme";
+import { useTheme, useThemedStyles } from "../contexts/ThemeContext";
 
 // "YYYY-MM-DDTHH:mm" no horário local (mesmo formato do datetime-local do web).
 export function formatDateTimeLocal(date) {
@@ -30,6 +31,8 @@ export function formatDateTimeLabel(date) {
 }
 
 export default function ScheduleModal({ visible, contactName, conversationId, otherUserId, onClose, onSubmit }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [titulo, setTitulo] = useState(`Encontro com ${contactName || "Usuário"}`);
   const [date, setDate] = useState(null);
   const [local, setLocal] = useState("");
@@ -181,8 +184,9 @@ export default function ScheduleModal({ visible, contactName, conversationId, ot
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },
+const createStyles = (colors) =>
+  StyleSheet.create({
+  backdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: colors.overlay },
   card: {
     maxHeight: "85%",
     backgroundColor: colors.surface,

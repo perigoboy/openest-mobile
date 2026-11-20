@@ -13,13 +13,16 @@ import Avatar from "./Avatar";
 import { subscribeInApp } from "../services/inAppNotifications";
 import { resolveMediaUrl } from "../utils/mediaUrl";
 import { navigateToChat } from "../routes/navigationRef";
-import { colors, radius, spacing, typography } from "../styles/theme";
+import { radius, spacing, typography } from "../styles/theme";
+import { useTheme, useThemedStyles } from "../contexts/ThemeContext";
 
 export const AUTO_DISMISS_MS = 4000;
 const EXIT_MS = 220;
 const HIDDEN_Y = -240;
 
 export default function InAppNotificationBanner() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
   const [current, setCurrent] = useState(null);
   const translateY = useRef(new Animated.Value(HIDDEN_Y)).current;
@@ -104,7 +107,8 @@ export default function InAppNotificationBanner() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) =>
+  StyleSheet.create({
   wrap: {
     position: "absolute",
     left: spacing.md,
@@ -118,13 +122,14 @@ const styles = StyleSheet.create({
     columnGap: spacing.sm,
     padding: spacing.sm,
     borderRadius: radius.lg,
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.surfaceElevated,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    elevation: 8,
   },
   matchBadge: {
     position: "absolute",
@@ -137,7 +142,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,
-    borderColor: colors.surfaceAlt,
+    borderColor: colors.surfaceElevated,
   },
   texts: {
     flex: 1,

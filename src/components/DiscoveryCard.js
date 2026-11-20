@@ -28,6 +28,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
+import { useTheme } from "../contexts/ThemeContext";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -60,6 +61,10 @@ export function resolveSwipe(translationX, velocityX, threshold) {
 }
 
 export default function DiscoveryCard({ profile, style, onSwipe, onReportPress, onBlockPress }) {
+  // Só o fundo/borda do card dependem do tema; o texto fica sobre a foto
+  // (sombra escura), então mantém cores fixas nos dois modos.
+  const { colors } = useTheme();
+  const themedCard = { backgroundColor: colors.surfaceMuted, borderColor: colors.border };
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const swipeThreshold = Math.round(windowWidth * SWIPE_SCREEN_RATIO);
   const translateX = useSharedValue(0);
@@ -133,7 +138,7 @@ export default function DiscoveryCard({ profile, style, onSwipe, onReportPress, 
     <GestureDetector gesture={pan}>
       <Animated.View
         testID="discovery-card"
-        style={[styles.card, { flex: 1, maxHeight: Math.round(windowHeight * CARD_SCREEN_RATIO) }, style, animatedStyle]}
+        style={[styles.card, themedCard, { flex: 1, maxHeight: Math.round(windowHeight * CARD_SCREEN_RATIO) }, style, animatedStyle]}
       >
         <ImageBackground
           testID="discovery-card-image"
@@ -199,13 +204,11 @@ export default function DiscoveryCard({ profile, style, onSwipe, onReportPress, 
 const styles = StyleSheet.create({
   card: {
     width: "100%",
-    borderRadius: 28,
+    borderRadius: 24,
     overflow: "hidden",
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.7)",
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  image: { borderRadius: 28 },
+  image: { borderRadius: 24 },
   fill: { flex: 1 },
   badge: {
     position: "absolute",

@@ -13,9 +13,12 @@ import {
   retryFailedRequests,
   subscribeNetworkErrors,
 } from "../services/networkErrors";
-import { colors, radius, spacing, typography } from "../styles/theme";
+import { radius, spacing, typography } from "../styles/theme";
+import { useTheme, useThemedStyles } from "../contexts/ThemeContext";
 
 export default function NetworkErrorBanner() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
   const [state, setState] = useState({ visible: false, kind: null, count: 0 });
 
@@ -76,7 +79,8 @@ export default function NetworkErrorBanner() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) =>
+  StyleSheet.create({
   wrap: {
     position: "absolute",
     left: spacing.md,
@@ -93,13 +97,16 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radius.md,
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     borderLeftWidth: 4,
     borderLeftColor: colors.warning,
     shadowColor: colors.black,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.18,
     shadowRadius: 12,
+    elevation: 6,
   },
   message: {
     ...typography.body,
@@ -117,7 +124,7 @@ const styles = StyleSheet.create({
   retryText: {
     ...typography.caption,
     fontWeight: "700",
-    color: colors.white,
+    color: colors.onPrimary,
   },
   dismiss: {
     width: 32,

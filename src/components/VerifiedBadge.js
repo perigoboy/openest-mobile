@@ -1,7 +1,8 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing } from "../styles/theme";
+import { spacing } from "../styles/theme";
+import { useTheme, useThemedStyles } from "../contexts/ThemeContext";
 
 /**
  * T023 — Selo "Verificado" (confiança da plataforma).
@@ -16,6 +17,8 @@ export default function VerifiedBadge({
   size = "md",
   style,
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const isSmall = size === "sm";
   const iconSize = isSmall ? 14 : 16;
 
@@ -26,17 +29,18 @@ export default function VerifiedBadge({
       accessibilityRole="text"
       accessibilityLabel="Perfil verificado"
     >
-      <Ionicons name="checkmark-circle" size={iconSize} color={colors.white} />
+      <Ionicons name="checkmark-circle" size={iconSize} color={colors.successText} />
       {!!label && <Text style={[styles.label, isSmall && styles.labelSmall]}>{label}</Text>}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) =>
+  StyleSheet.create({
   badge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.success,
+    backgroundColor: colors.successSoft,
     borderRadius: 999,
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
@@ -47,7 +51,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   label: {
-    color: colors.white,
+    color: colors.successText,
     fontSize: 12,
     fontWeight: "700",
     marginLeft: 4,

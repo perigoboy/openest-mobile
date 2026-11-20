@@ -10,7 +10,7 @@
 // foto (T020) e verificação por selfie (T023). Ficam para testes futuros.
 
 import React from "react";
-import { render, screen, act, fireEvent } from "@testing-library/react-native";
+import { render, screen, act, fireEvent, waitFor } from "@testing-library/react-native";
 import { Alert } from "react-native";
 import Profile from "../../src/screens/Profile";
 import api from "../../src/services/api";
@@ -68,11 +68,19 @@ jest.mock("../../src/services/api", () => ({
 }));
 
 // Componentes internos do app (barrel ../../components).
-jest.mock("../../src/components", () => ({
-  Avatar: () => null,
-  PhotoGallery: () => null,
-  VerifiedBadge: () => null,
-}));
+jest.mock("../../src/components", () => {
+  const React = require("react");
+  const { Pressable, Text } = require("react-native");
+  return {
+    Avatar: () => null,
+    VerifiedBadge: () => null,
+    // A galeria real é testada à parte; aqui basta o botão "adicionar".
+    PhotoGallery: ({ onAdd }) =>
+      React.createElement(Pressable, { testID: "gallery-add", onPress: onAdd, accessibilityRole: "button", accessibilityLabel: "Adicionar foto" },
+        React.createElement(Text, null, "Adicionar foto")),
+    Button: jest.requireActual("../../src/components/Button").default,
+  };
+});
 
 // Serviços auxiliares — não são o alvo dos testes da T026.
 jest.mock("../../src/services/uploadPhoto", () => ({
@@ -331,14 +339,9 @@ describe("Profile — Edição de perfil (T019)", () => {
     api.put.mockResolvedValue({ data: { user: { name: "Fulano de Tal" } } });
     await renderProfile();
 
-    const salvarText = screen.getByText("SALVAR");
-    let node = salvarText.parent;
-    while (node && typeof node.props.onPress !== "function") {
-      node = node.parent;
-    }
-    expect(node).toBeTruthy();
+    expect(screen.getByText("Salvar alterações")).toBeTruthy();
     await act(async () => {
-      await node.props.onPress();
+      fireEvent.press(screen.getByTestId("btn-save-profile"));
     });
 
     expect(api.put).toHaveBeenCalledWith(
@@ -347,5 +350,76 @@ describe("Profile — Edição de perfil (T019)", () => {
     );
     const titles = Alert.alert.mock.calls.map((c) => c[0]);
     expect(titles).toContain("Sucesso");
+  });
+});
+
+// --- Foto: câmera ou galeria numa gaveta (estilo WhatsApp) ---------------
+describe("Profile — foto pela câmera ou galeria", () => {
+  const ImagePicker = require("expo-image-picker");
+  const { uploadProfilePhoto } = require("../../src/services/uploadPhoto");
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Alert.alert.mockClear();
+    api.get.mockResolvedValue({ data: makeProfile() });
+    ImagePicker.requestCameraPermissionsAsync.mockResolvedValue({ status: "granted", granted: true });
+    ImagePicker.requestMediaLibraryPermissionsAsync.mockResolvedValue({ status: "granted", granted: true });
+  });
+
+  it("trocar a foto abre a gaveta com 'Tirar foto' e 'Escolher da galeria'", async () => {
+    await renderProfile();
+    fireEvent.press(screen.getByTestId("btn-change-photo"));
+
+    expect(screen.getByText("Foto de perfil")).toBeTruthy();
+    expect(screen.getByTestId("photo-source-camera")).toBeTruthy();
+    expect(screen.getByTestId("photo-source-gallery")).toBeTruthy();
+    expect(Alert.alert).not.toHaveBeenCalled(); // nada de Alert para escolher a origem
+  });
+
+  it("'Tirar foto' pede permissão da CÂMERA e abre a câmera nativa", async () => {
+    ImagePicker.launchCameraAsync.mockResolvedValue({ canceled: true });
+    await renderProfile();
+    fireEvent.press(screen.getByTestId("btn-change-photo"));
+    fireEvent.press(screen.getByTestId("photo-source-camera"));
+
+    await waitFor(() => expect(ImagePicker.requestCameraPermissionsAsync).toHaveBeenCalled());
+    await waitFor(() => expect(ImagePicker.launchCameraAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1] })
+    ));
+    expect(ImagePicker.launchImageLibraryAsync).not.toHaveBeenCalled();
+  });
+
+  it("'Escolher da galeria' abre a galeria", async () => {
+    ImagePicker.launchImageLibraryAsync.mockResolvedValue({ canceled: true });
+    await renderProfile();
+    fireEvent.press(screen.getByTestId("btn-change-photo"));
+    fireEvent.press(screen.getByTestId("photo-source-gallery"));
+
+    await waitFor(() => expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalled());
+    expect(ImagePicker.launchCameraAsync).not.toHaveBeenCalled();
+  });
+
+  it("câmera sem permissão avisa e não abre nada", async () => {
+    ImagePicker.requestCameraPermissionsAsync.mockResolvedValue({ status: "denied", granted: false });
+    await renderProfile();
+    fireEvent.press(screen.getByTestId("btn-change-photo"));
+    fireEvent.press(screen.getByTestId("photo-source-camera"));
+
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledWith("Permissão negada", expect.stringContaining("câmera")));
+    expect(ImagePicker.launchCameraAsync).not.toHaveBeenCalled();
+    expect(uploadProfilePhoto).not.toHaveBeenCalled();
+  });
+
+  it("adicionar à galeria também oferece câmera e galeria (recorte 4:5)", async () => {
+    ImagePicker.launchCameraAsync.mockResolvedValue({ canceled: true });
+    await renderProfile();
+    fireEvent.press(screen.getByTestId("gallery-add"));
+
+    expect(screen.getByTestId("photo-source-sheet")).toBeTruthy();
+    expect(screen.getAllByText("Adicionar foto").length).toBeGreaterThanOrEqual(2); // botão + título da gaveta
+    fireEvent.press(screen.getByTestId("photo-source-camera"));
+    await waitFor(() => expect(ImagePicker.launchCameraAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ aspect: [4, 5] })
+    ));
   });
 });

@@ -1,22 +1,26 @@
 // src/screens/Profile/index.js
+// Visual: cards limpos sobre o fundo do tema (claro/escuro). A foto de
+// perfil e as fotos da galeria vêm da CÂMERA ou da GALERIA, escolhidas numa
+// gaveta (bottom sheet) estilo WhatsApp.
 import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   ScrollView,
-  Image,
   Alert,
   Switch,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { Avatar, PhotoGallery, VerifiedBadge } from "../../components";
-import { colors, spacing, typography } from "../../styles/theme";
+import { Avatar, Button, PhotoGallery, VerifiedBadge } from "../../components";
+import { ActionSheet } from "../../components/BottomSheet";
+import { useTheme, useThemedStyles } from "../../contexts/ThemeContext";
+import { pickImage } from "../../services/imageSource";
+import { radius, spacing, typography } from "../../styles/theme";
 import api from "../../services/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { updateMyProfile } from "../../services/profile";
@@ -32,8 +36,15 @@ import {
   setMainPhoto,
 } from "../../services/profilePhotos";
 
+// Fechar a gaveta e abrir câmera/galeria no mesmo instante falha no iOS.
+const SHEET_CLOSE_DELAY_MS = Platform.OS === "ios" ? 350 : 0;
+
 export default function Profile({ navigation }) {
   const { updateUser } = useAuth();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  // 'avatar' (trocar a foto principal) | 'gallery' (adicionar à galeria) | null
+  const [photoSheet, setPhotoSheet] = useState(null);
   const [saving, setSaving] = useState(false);
   const [userData, setUserData] = useState({
     name: "Carregando...",
@@ -138,7 +149,7 @@ export default function Profile({ navigation }) {
 
   // Envia a nova foto para a nuvem e acrescenta no fim da lista — ela não
   // substitui a principal — respeitando o limite N de fotos do perfil.
-  async function handleAddPhoto() {
+  function handleAddPhoto() {
     if (uploading) return;
 
     if (photos.length >= MAX_PROFILE_PHOTOS) {
@@ -148,31 +159,31 @@ export default function Profile({ navigation }) {
       );
       return;
     }
+    setPhotoSheet("gallery");
+  }
 
-    try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (!permissionResult.granted) {
-        Alert.alert("Permissão negada", "Precisamos de permissão para aceder à galeria.");
-        return;
+  // Câmera ou galeria → recorte → upload. `target` decide se a foto vira a
+  // principal (avatar) ou entra no fim da galeria.
+  function choosePhoto(source, target) {
+    setTimeout(async () => {
+      try {
+        const asset = await pickImage(source, {
+          allowsEditing: true,
+          aspect: target === "avatar" ? [1, 1] : [4, 5],
+          quality: 0.8,
+        });
+        if (!asset) return;
+        if (target === "avatar") await uploadPhoto(asset);
+        else await uploadGalleryPhoto(asset);
+      } catch (error) {
+        if (error?.code === "permission_denied") {
+          Alert.alert("Permissão negada", error.message);
+          return;
+        }
+        console.error("Erro ao escolher imagem:", error);
+        Alert.alert("Erro", "Não foi possível carregar a imagem.");
       }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        // MediaTypeOptions está deprecado no SDK 57 — usa a lista de MediaType.
-        mediaTypes: ["images"],
-        allowsEditing: true,
-        aspect: [4, 5],
-        quality: 0.8,
-      });
-
-      if (result.canceled || !result.assets || result.assets.length === 0) {
-        return;
-      }
-
-      await uploadGalleryPhoto(result.assets[0]);
-    } catch (error) {
-      Alert.alert("Erro", "Não foi possível carregar a imagem.");
-    }
+    }, SHEET_CLOSE_DELAY_MS);
   }
 
   // Upload da foto de galeria + gravação da lista ordenada no backend.
@@ -206,56 +217,10 @@ export default function Profile({ navigation }) {
   // na nuvem (Cloudinary) via FormData.
   // ---------------------------------------------------------------
 
-  // Mostra as opções de origem da nova foto de perfil.
+  // Mostra as opções de origem da nova foto de perfil (gaveta).
   function handleChangePhoto() {
     if (uploading) return;
-
-    Alert.alert("Trocar foto de perfil", "Escolha uma opção:", [
-      { text: "Galeria", onPress: () => pickAndUploadPhoto("library") },
-      { text: "Câmera", onPress: () => pickAndUploadPhoto("camera") },
-      { text: "Cancelar", style: "cancel" },
-    ]);
-  }
-
-  // Solicita a permissão, abre o seletor/câmera e envia a imagem para a API.
-  async function pickAndUploadPhoto(source) {
-    try {
-      const permission =
-        source === "camera"
-          ? await ImagePicker.requestCameraPermissionsAsync()
-          : await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (!permission.granted) {
-        Alert.alert(
-          "Permissão negada",
-          source === "camera"
-            ? "Precisamos de permissão para usar a câmera."
-            : "Precisamos de permissão para aceder à galeria."
-        );
-        return;
-      }
-
-      const pickerOptions = {
-        mediaTypes: ["images"],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      };
-
-      const result =
-        source === "camera"
-          ? await ImagePicker.launchCameraAsync(pickerOptions)
-          : await ImagePicker.launchImageLibraryAsync(pickerOptions);
-
-      if (result.canceled || !result.assets || result.assets.length === 0) {
-        return;
-      }
-
-      await uploadPhoto(result.assets[0]);
-    } catch (error) {
-      console.error("Erro ao escolher imagem:", error);
-      Alert.alert("Erro", "Não foi possível carregar a imagem.");
-    }
+    setPhotoSheet("avatar");
   }
 
   // Monta o FormData e envia para POST /api/users/upload-photo; a API salva
@@ -411,62 +376,80 @@ export default function Profile({ navigation }) {
     }
   }
 
+  const photoOptions = [
+    {
+      key: "camera",
+      testID: "photo-source-camera",
+      label: "Tirar foto",
+      description: "Usar a câmera agora",
+      icon: "camera-outline",
+      onPress: () => choosePhoto("camera", photoSheet),
+    },
+    {
+      key: "gallery",
+      testID: "photo-source-gallery",
+      label: "Escolher da galeria",
+      icon: "images-outline",
+      onPress: () => choosePhoto("gallery", photoSheet),
+    },
+  ];
+
   return (
-    <LinearGradient colors={['#2c003e', '#1a0026', '#0d0012']} style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Topo / Logo */}
-          <View style={styles.logoContainer}>
-            <Image 
-              source={require('../../../assets/logo-texto.png')} 
-              style={{ width: 120, height: 32 }} 
-              resizeMode="contain" 
-            />
-          </View>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <Text style={styles.screenTitle} accessibilityRole="header">Perfil</Text>
 
-          {/* Avatar e Informações Dinâmicas do Usuário (T020: foto na nuvem) */}
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatarWrapper}>
-              <Avatar uri={userData.foto_url} name={userData.name} size={80} />
-              <TouchableOpacity
-                accessibilityRole="button"
-                testID="btn-change-photo"
-                style={[styles.changePhotoButton, uploading && styles.changePhotoButtonDisabled]}
-                onPress={handleChangePhoto}
-                disabled={uploading}
-                accessibilityLabel="Trocar foto de perfil"
-              >
-                <Ionicons name="camera-outline" size={16} color="#fff" />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.userName}>
-              {uploading ? "Enviando foto..." : userData.name}
-            </Text>
-            {/* T023 — selo "Verificado" após aprovação da selfie */}
-            {verificado && <VerifiedBadge style={styles.verifiedBadge} />}
-            <Text style={styles.userEmail}>{userData.email}</Text>
-          </View>
-
-          {/* Grid de Fotos (T021): adicionar/remover/reordenar até N fotos */}
-          <View style={styles.galleryContainer}>
-            <PhotoGallery
-              photos={photos}
-              onAdd={handleAddPhoto}
-              onRemove={handleRemovePhoto}
-              onMove={handleMovePhoto}
-              onSetMain={handleSetMainPhoto}
+        {/* Avatar e informações do usuário (T020: foto na nuvem) */}
+        <View style={[styles.card, styles.heroCard]}>
+          <View style={styles.avatarWrapper}>
+            <Avatar uri={userData.foto_url} name={userData.name} size={88} />
+            <Pressable
+              accessibilityRole="button"
+              testID="btn-change-photo"
+              style={[styles.changePhotoButton, uploading && styles.changePhotoButtonDisabled]}
+              onPress={handleChangePhoto}
               disabled={uploading}
-            />
+              accessibilityLabel="Trocar foto de perfil"
+              hitSlop={6}
+            >
+              <Ionicons name="camera" size={15} color={colors.onPrimary} />
+            </Pressable>
           </View>
+          <View style={styles.heroTexts}>
+            <View style={styles.nameRow}>
+              <Text style={styles.userName} numberOfLines={1}>
+                {uploading ? "Enviando foto..." : userData.name}
+              </Text>
+              {/* T023 — selo "Verificado" após aprovação da selfie */}
+              {verificado && <VerifiedBadge style={styles.verifiedBadge} />}
+            </View>
+            <Text style={styles.userEmail} numberOfLines={1}>{userData.email}</Text>
+          </View>
+        </View>
 
-          {/* Formulário de Campos Detalhados */}
-          <View style={styles.formContainer}>
+        {/* Grade de fotos (T021): adicionar/remover/reordenar até N fotos */}
+        <Text style={styles.sectionTitle}>FOTOS</Text>
+        <View style={[styles.card, styles.cardPadded]}>
+          <PhotoGallery
+            photos={photos}
+            onAdd={handleAddPhoto}
+            onRemove={handleRemovePhoto}
+            onMove={handleMovePhoto}
+            onSetMain={handleSetMainPhoto}
+            disabled={uploading}
+          />
+        </View>
+
+        {/* Formulário */}
+        <Text style={styles.sectionTitle}>SOBRE VOCÊ</Text>
+        <View style={[styles.card, styles.cardPadded]}>
             <Text style={styles.label}>Nome</Text>
             <TextInput
               accessibilityLabel="Nome"
               style={styles.input}
-              placeholder="Seu Nome"
-              placeholderTextColor="#999"
+              placeholder="Seu nome"
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={colors.primary}
               value={userData.firstName}
               onChangeText={(text) => setUserData({ ...userData, firstName: text })}
             />
@@ -475,8 +458,9 @@ export default function Profile({ navigation }) {
             <TextInput
               accessibilityLabel="Sobrenome"
               style={styles.input}
-              placeholder="Seu Sobrenome"
-              placeholderTextColor="#999"
+              placeholder="Seu sobrenome"
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={colors.primary}
               value={userData.lastName}
               onChangeText={(text) => setUserData({ ...userData, lastName: text })}
             />
@@ -485,8 +469,9 @@ export default function Profile({ navigation }) {
             <TextInput
               accessibilityLabel="Gênero"
               style={styles.input}
-              placeholder="Seu Gênero"
-              placeholderTextColor="#999"
+              placeholder="Seu gênero"
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={colors.primary}
               value={userData.gender}
               onChangeText={(text) => setUserData({ ...userData, gender: text })}
             />
@@ -495,8 +480,9 @@ export default function Profile({ navigation }) {
             <TextInput
               accessibilityLabel="Nome de usuário"
               style={styles.input}
-              placeholder="Seu Usuário"
-              placeholderTextColor="#999"
+              placeholder="Seu usuário"
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={colors.primary}
               value={userData.username}
               onChangeText={(text) => setUserData({ ...userData, username: text })}
             />
@@ -506,7 +492,8 @@ export default function Profile({ navigation }) {
               accessibilityLabel="Idioma principal"
               style={styles.input}
               placeholder="Idioma principal"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={colors.primary}
               value={userData.language}
               onChangeText={(text) => setUserData({ ...userData, language: text })}
             />
@@ -516,7 +503,8 @@ export default function Profile({ navigation }) {
               accessibilityLabel="Escolaridade"
               style={styles.input}
               placeholder="Sua escolaridade"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={colors.primary}
               value={userData.education}
               onChangeText={(text) => setUserData({ ...userData, education: text })}
             />
@@ -526,7 +514,8 @@ export default function Profile({ navigation }) {
               accessibilityLabel="Status de relacionamento"
               style={styles.input}
               placeholder="Status de relacionamento"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={colors.primary}
               value={userData.maritalStatus}
               onChangeText={(text) => setUserData({ ...userData, maritalStatus: text })}
             />
@@ -536,7 +525,8 @@ export default function Profile({ navigation }) {
               accessibilityLabel="Localidade"
               style={styles.input}
               placeholder="Sua localidade"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={colors.primary}
               value={userData.cityNeighborhood}
               onChangeText={(text) => setUserData({ ...userData, cityNeighborhood: text })}
             />
@@ -546,204 +536,208 @@ export default function Profile({ navigation }) {
               accessibilityLabel="Sobre você"
               style={[styles.input, styles.textArea]}
               placeholder="Escreva sobre você..."
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={colors.primary}
               multiline
               value={userData.bio}
               onChangeText={(text) => setUserData({ ...userData, bio: text })}
             />
+        </View>
 
-            {/* Modo Discreto — privacidade principal (T022) */}
-            <View style={styles.privacyCard} testID="card-modo-discreto">
-              <View style={styles.privacyRow}>
-                <Ionicons name="eye-off-outline" size={20} color="#fff" />
-                <Text style={styles.privacyTitle}>Modo Discreto</Text>
-                <Switch
-                  testID="switch-modo-discreto"
-                  value={modoDiscreto}
-                  onValueChange={handleToggleModoDiscreto}
-                  disabled={savingPrivacy}
-                  trackColor={{ false: "#b2bec3", true: colors.primaryLight }}
-                  thumbColor={colors.white}
-                  accessibilityLabel="Ativar ou desativar Modo Discreto"
-                />
-              </View>
-              <Text style={styles.privacyHint}>
-                Oculta seu perfil do Discovery e desliga a confirmação de
-                leitura: enquanto estiver ativo, nem você nem a outra pessoa
-                veem os checks azuis de "visualizada" — as mensagens param em
-                entregue (2 checks cinzas) para os dois lados. Seus matches e
-                conversas continuam ativos. Salvo automaticamente.
-              </Text>
-              <Text style={styles.privacyStatus}>
-                {savingPrivacy
-                  ? "Salvando..."
-                  : modoDiscreto
-                    ? "Ativado — perfil oculto e sem confirmação de leitura"
-                    : "Desativado — perfil visível e checks azuis ativos"}
-              </Text>
+        {/* Modo Discreto — privacidade principal (T022) */}
+        <Text style={styles.sectionTitle}>PRIVACIDADE</Text>
+        <View style={[styles.card, styles.cardPadded]} testID="card-modo-discreto">
+          <View style={styles.privacyRow}>
+            <View style={styles.privacyIcon}>
+              <Ionicons name="eye-off-outline" size={18} color={colors.accent} />
             </View>
-
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Salvar alterações do perfil"
-              testID="btn-save-profile"
-              style={styles.buttonWrapper}
-              onPress={handleSave}
-              disabled={saving}
-            >
-              <LinearGradient
-                colors={['#7b2cbf', '#5a189a', '#3c096c']}
-                style={[styles.button, saving && { opacity: 0.6 }]}
-              >
-                <Text style={styles.buttonText}>{saving ? "SALVANDO..." : "SALVAR"}</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+            <Text style={styles.privacyTitle}>Modo Discreto</Text>
+            <Switch
+              testID="switch-modo-discreto"
+              value={modoDiscreto}
+              onValueChange={handleToggleModoDiscreto}
+              disabled={savingPrivacy}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.white}
+              ios_backgroundColor={colors.border}
+              accessibilityLabel="Ativar ou desativar Modo Discreto"
+            />
           </View>
-        </ScrollView>
-      </SafeAreaView>
-    </LinearGradient>
+          <Text style={styles.privacyHint}>
+            Oculta seu perfil do Discovery e desliga a confirmação de
+            leitura: enquanto estiver ativo, nem você nem a outra pessoa
+            veem os checks azuis de "visualizada" — as mensagens param em
+            entregue (2 checks cinzas) para os dois lados. Seus matches e
+            conversas continuam ativos. Salvo automaticamente.
+          </Text>
+          <Text style={[styles.privacyStatus, modoDiscreto && styles.privacyStatusOn]}>
+            {savingPrivacy
+              ? "Salvando..."
+              : modoDiscreto
+                ? "Ativado — perfil oculto e sem confirmação de leitura"
+                : "Desativado — perfil visível e checks azuis ativos"}
+          </Text>
+        </View>
+
+        <Button
+          testID="btn-save-profile"
+          title={saving ? "Salvando..." : "Salvar alterações"}
+          onPress={handleSave}
+          disabled={saving}
+          accessibilityLabel="Salvar alterações do perfil"
+          style={styles.saveButton}
+        />
+      </ScrollView>
+
+      <ActionSheet
+        testID="photo-source-sheet"
+        visible={!!photoSheet}
+        onClose={() => setPhotoSheet(null)}
+        title={photoSheet === "avatar" ? "Foto de perfil" : "Adicionar foto"}
+        options={photoOptions}
+      />
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.lg,
-    // Espaço extra para a tab bar flutuante (≈68px + inset) não cobrir o
-    // botão SALVAR nem o último campo do formulário.
-    paddingBottom: 120,
-    alignItems: "center",
-  },
-  logoContainer: {
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-    alignItems: "center",
-  },
-  logoText: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#fff",
-    letterSpacing: 2,
-  },
-  avatarContainer: {
-    alignItems: "center",
-    marginBottom: spacing.md,
-  },
-  avatarWrapper: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  changePhotoButton: {
-    position: "absolute",
-    bottom: -4,
-    right: -4,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#7b2cbf",
-    borderWidth: 2,
-    borderColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  changePhotoButtonDisabled: {
-    opacity: 0.6,
-  },
-  userName: {
-    ...typography.h2,
-    color: "#fff",
-    marginTop: spacing.sm,
-    textAlign: "center",
-  },
-  userEmail: {
-    ...typography.body,
-    color: colors.textMuted || "#dcdde1",
-  },
-  // T023 — selo "Verificado" centralizado abaixo do nome
-  verifiedBadge: {
-    alignSelf: "center",
-    marginTop: spacing.sm,
-  },
-  galleryContainer: {
-    width: "100%",
-    marginBottom: spacing.xl,
-  },
-  formContainer: {
-    width: "100%",
-  },
-  label: {
-    ...typography.caption,
-    color: "#fff",
-    marginBottom: spacing.xs,
-    fontWeight: "600",
-  },
-  input: {
-    backgroundColor: "#fff",
-    height: 48,
-    borderRadius: 12,
-    paddingHorizontal: spacing.md,
-    fontSize: 14,
-    marginBottom: spacing.md,
-    color: "#2d3436",
-  },
-  textArea: {
-    height: 100,
-    paddingTop: spacing.sm,
-    textAlignVertical: "top",
-  },
-  buttonWrapper: {
-    width: "100%",
-    borderRadius: 12,
-    overflow: "hidden",
-    marginTop: spacing.sm,
-  },
-  button: {
-    height: 48,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "bold",
-    letterSpacing: 1,
-  },
-  // T022 — cartão do Modo Discreto (privacidade)
-  privacyCard: {
-    width: "100%",
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    padding: spacing.md,
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  privacyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  privacyTitle: {
-    ...typography.h3,
-    color: "#fff",
-    flex: 1,
-    marginHorizontal: spacing.sm,
-  },
-  privacyHint: {
-    ...typography.caption,
-    color: colors.textMuted || "#dcdde1",
-    marginTop: spacing.sm,
-    lineHeight: 17,
-  },
-  privacyStatus: {
-    ...typography.caption,
-    color: colors.primaryLight,
-    marginTop: spacing.xs,
-    fontWeight: "600",
-  },
-});
+const createStyles = (colors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollContent: {
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.xl,
+    },
+    screenTitle: {
+      ...typography.h1,
+      color: colors.textPrimary,
+      marginTop: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    sectionTitle: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      fontWeight: "600",
+      letterSpacing: 0.6,
+      marginTop: spacing.lg,
+      marginBottom: spacing.sm,
+      marginLeft: spacing.xs,
+    },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    cardPadded: {
+      padding: spacing.md,
+    },
+    heroCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      columnGap: spacing.md,
+      padding: spacing.md,
+    },
+    avatarWrapper: {
+      position: "relative",
+    },
+    changePhotoButton: {
+      position: "absolute",
+      right: -2,
+      bottom: -2,
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.primary,
+      borderWidth: 2,
+      borderColor: colors.surface,
+    },
+    changePhotoButtonDisabled: {
+      opacity: 0.5,
+    },
+    heroTexts: {
+      flex: 1,
+    },
+    nameRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      columnGap: 6,
+    },
+    userName: {
+      ...typography.h2,
+      color: colors.textPrimary,
+      flexShrink: 1,
+    },
+    verifiedBadge: {
+      marginLeft: 2,
+    },
+    userEmail: {
+      ...typography.body,
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    label: {
+      ...typography.label,
+      color: colors.textSecondary,
+      marginBottom: 6,
+    },
+    input: {
+      backgroundColor: colors.inputBg,
+      height: 46,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: spacing.md,
+      ...typography.body,
+      color: colors.textPrimary,
+      marginBottom: 14,
+    },
+    textArea: {
+      height: 110,
+      paddingTop: 12,
+      textAlignVertical: "top",
+      marginBottom: 0,
+    },
+    privacyRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      columnGap: 12,
+    },
+    privacyIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 9,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.primarySoft,
+    },
+    privacyTitle: {
+      flex: 1,
+      ...typography.bodyStrong,
+      color: colors.textPrimary,
+    },
+    privacyHint: {
+      ...typography.caption,
+      fontSize: 13,
+      lineHeight: 18,
+      color: colors.textSecondary,
+      marginTop: spacing.sm,
+    },
+    privacyStatus: {
+      ...typography.caption,
+      fontWeight: "600",
+      color: colors.textSecondary,
+      marginTop: spacing.sm,
+    },
+    privacyStatusOn: {
+      color: colors.accent,
+    },
+    saveButton: {
+      marginTop: spacing.lg,
+    },
+  });
