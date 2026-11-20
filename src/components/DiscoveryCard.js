@@ -7,7 +7,7 @@
 // arraste move/rotaciona o cartão com animação fluida e, ao ultrapassar o
 // threshold (ou com um flick rápido), aciona o MESMO callback de ação dos
 // botões Like/Pass da Discovery via `onSwipe(direction)`.
-import React, { useEffect } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import {
   View,
   Text,
@@ -23,7 +23,6 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
   withSpring,
   withTiming,
 } from "react-native-reanimated";
@@ -40,11 +39,14 @@ export const SWIPE_SCREEN_RATIO = 0.3;
 // Velocidade (px/s) mínima de um "flick" rápido que completa o swipe mesmo
 // com deslocamento curto (T032).
 export const SWIPE_VELOCITY_THRESHOLD = 700;
-// Duração (ms) da animação que manda o cartão pra fora da tela e atraso (ms)
-// do reset de posição — o reset precisa começar DEPOIS da saída porque o JS é
-// avisado no início da saída (ver onEnd e o useEffect do componente).
-export const SWIPE_EXIT_DURATION_MS = 240;
+// Duração (ms) da animação que manda o cartão pra fora da tela. O baralho só
+// avança DEPOIS dela (onSwipe é chamado no fim), para o próximo perfil nunca
+// aparecer "voando" dentro do cartão que está saindo.
+export const SWIPE_EXIT_DURATION_MS = 260;
+// Mantido por compatibilidade (o reset agora acontece ao trocar de perfil).
 export const SWIPE_RESET_DELAY_MS = 280;
+// Rotação máxima (graus) — a mesma do web.
+export const SWIPE_MAX_ROTATION = 12;
 
 // T032 — decide se o arraste completa o swipe: "like" (para a direita),
 // "pass" (para a esquerda) ou null (volta ao centro com spring). A velocidade
@@ -60,7 +62,9 @@ export function resolveSwipe(translationX, velocityX, threshold) {
   return null;
 }
 
-export default function DiscoveryCard({ profile, style, onSwipe, onReportPress, onBlockPress }) {
+// `ref.swipe("like" | "pass")`: os botões ♥ / X fazem a MESMA saída animada
+// do gesto (o cartão voa para o lado e só então o baralho avança).
+const DiscoveryCard = forwardRef(function DiscoveryCard({ profile, style, onSwipe, onReportPress, onBlockPress }, ref) {
   // Só o fundo/borda do card dependem do tema; o texto fica sobre a foto
   // (sombra escura), então mantém cores fixas nos dois modos.
   const { colors } = useTheme();
@@ -69,41 +73,68 @@ export default function DiscoveryCard({ profile, style, onSwipe, onReportPress, 
   const swipeThreshold = Math.round(windowWidth * SWIPE_SCREEN_RATIO);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
+  const scale = useSharedValue(0.95);
+  // true enquanto o cartão sai da tela: ignora novos gestos e toques.
+  const exiting = useSharedValue(false);
+  const onSwipeRef = useRef(onSwipe);
+  const exitTimer = useRef(null);
+  onSwipeRef.current = onSwipe;
 
-  // Volta ao centro quando o perfil muda (swipe concluído, baralho avançado
-  // pelos botões ou reinício). O reset é ADIADO para depois da animação de
-  // saída: o JS é avisado no início da saída (ver onEnd), então sem o delay o
-  // cartão voltaria ao centro antes de terminar de voar pra fora da tela.
+  // Perfil novo: cartão no centro, subindo suavemente (como o próximo da
+  // pilha assumindo o lugar).
   useEffect(() => {
-    translateX.value = withDelay(SWIPE_RESET_DELAY_MS, withTiming(0, { duration: 0 }));
-    translateY.value = withDelay(SWIPE_RESET_DELAY_MS, withTiming(0, { duration: 0 }));
-  }, [profile, translateX, translateY]);
+    translateX.value = 0;
+    translateY.value = 0;
+    exiting.value = false;
+    scale.value = 0.95;
+    scale.value = withSpring(1, { damping: 18, stiffness: 220 });
+  }, [profile, translateX, translateY, scale, exiting]);
+
+  useEffect(() => () => clearTimeout(exitTimer.current), []);
+
+  // Avisa a tela só quando o cartão já saiu (timer no JS: chamar runOnJS no
+  // callback de fim do withTiming é um bug conhecido do Worklets no Android).
+  function finishExit(direction) {
+    clearTimeout(exitTimer.current);
+    exitTimer.current = setTimeout(() => onSwipeRef.current?.(direction), SWIPE_EXIT_DURATION_MS);
+  }
+
+  function flyOut(direction) {
+    if (exiting.value) return;
+    exiting.value = true;
+    const offScreen = direction === "like" ? windowWidth * 1.4 : -windowWidth * 1.4;
+    translateX.value = withTiming(offScreen, { duration: SWIPE_EXIT_DURATION_MS });
+    translateY.value = withTiming(translateY.value + 30, { duration: SWIPE_EXIT_DURATION_MS });
+    finishExit(direction);
+  }
+
+  useImperativeHandle(ref, () => ({ swipe: flyOut }));
 
   // T032 — gesto Pan: o arraste segue o dedo (com deslocamento vertical
   // suave); no fim, resolveSwipe decide entre completar (anima o cartão para
   // fora da tela e chama onSwipe na JS thread) ou voltar ao centro com spring.
   const pan = Gesture.Pan()
     .onUpdate((e) => {
+      if (exiting.value) return;
       translateX.value = e.translationX;
       translateY.value = e.translationY * 0.35;
     })
     .onEnd((e) => {
+      if (exiting.value) return;
       const direction = resolveSwipe(e.translationX, e.velocityX, swipeThreshold);
       if (!direction) {
         translateX.value = withSpring(0, { damping: 20, stiffness: 180 });
         translateY.value = withSpring(0, { damping: 20, stiffness: 180 });
         return;
       }
+      exiting.value = true;
       const offScreen = direction === "like" ? windowWidth * 1.4 : -windowWidth * 1.4;
       translateX.value = withTiming(offScreen, { duration: SWIPE_EXIT_DURATION_MS });
-      translateY.value = withTiming(translateY.value, { duration: SWIPE_EXIT_DURATION_MS });
-      // Aviso o JS AGORA e nunca dentro do callback de completion do
-      // withTiming: chamar runOnJS (scheduleOnRN) lá dentro é um bug conhecido
-      // do Worklets 0.10.0 — use-after-free/SIGABRT no Android com New
-      // Architecture (reanimated#9786) — e o Expo Go embute o worklets nativo,
-      // então evitamos o padrão. O reset da posição é adiado pelo useEffect
-      // para o cartão terminar de sair da tela.
-      if (onSwipe) runOnJS(onSwipe)(direction);
+      translateY.value = withTiming(translateY.value + 30, { duration: SWIPE_EXIT_DURATION_MS });
+      // Avisa o JS AGORA (nunca no callback de fim do withTiming: bug do
+      // Worklets 0.10.0 no Android/New Architecture, reanimated#9786); o JS
+      // espera a saída terminar antes de chamar onSwipe (finishExit).
+      runOnJS(finishExit)(direction);
     });
 
   // Rotação proporcional ao arraste (até ±12°) dá o "peso" visual do gesto.
@@ -111,11 +142,12 @@ export default function DiscoveryCard({ profile, style, onSwipe, onReportPress, 
     transform: [
       { translateX: translateX.value },
       { translateY: translateY.value },
-      { rotate: `${interpolate(translateX.value, [-windowWidth, 0, windowWidth], [-12, 0, 12])}deg` },
+      { rotate: `${interpolate(translateX.value, [-windowWidth, 0, windowWidth], [-SWIPE_MAX_ROTATION, 0, SWIPE_MAX_ROTATION])}deg` },
+      { scale: scale.value },
     ],
   }));
 
-  // Selos CURTIR/PASSAR surgem conforme o arraste se aproxima do threshold.
+  // Selos CURTI/PASSAR surgem conforme o arraste se aproxima do threshold.
   const likeStampStyle = useAnimatedStyle(() => ({
     opacity: Math.min(Math.max(translateX.value / swipeThreshold, 0), 1),
   }));
@@ -182,7 +214,7 @@ export default function DiscoveryCard({ profile, style, onSwipe, onReportPress, 
 
           {/* Selos do gesto (T032) — pointerEvents="none" para não roubar o toque. */}
           <Animated.View style={[styles.stamp, styles.stampLike, likeStampStyle]} pointerEvents="none" testID="discovery-stamp-like">
-            <Text style={[styles.stampText, styles.stampLikeText]}>CURTIR</Text>
+            <Text style={[styles.stampText, styles.stampLikeText]}>CURTI</Text>
           </Animated.View>
           <Animated.View style={[styles.stamp, styles.stampPass, passStampStyle]} pointerEvents="none" testID="discovery-stamp-pass">
             <Text style={[styles.stampText, styles.stampPassText]}>PASSAR</Text>
@@ -199,7 +231,9 @@ export default function DiscoveryCard({ profile, style, onSwipe, onReportPress, 
       </Animated.View>
     </GestureDetector>
   );
-}
+});
+
+export default DiscoveryCard;
 
 const styles = StyleSheet.create({
   card: {
@@ -254,7 +288,7 @@ const styles = StyleSheet.create({
   },
   stampLike: { left: 18, borderColor: "#12B76A", transform: [{ rotate: "-14deg" }] },
   stampLikeText: { color: "#12B76A" },
-  stampPass: { right: 18, borderColor: "#7B1FCF", transform: [{ rotate: "14deg" }] },
-  stampPassText: { color: "#7B1FCF" },
+  stampPass: { right: 18, borderColor: "#F04438", transform: [{ rotate: "14deg" }] },
+  stampPassText: { color: "#F04438" },
   stampText: { fontSize: 22, fontWeight: "900", letterSpacing: 1 },
 });

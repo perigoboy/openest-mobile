@@ -6,7 +6,7 @@
 // Visual estilo WhatsApp: cabeçalho compacto, fundo com textura sutil,
 // balões agrupados com cantos assimétricos, separador de dias, barra de
 // digitação arredondada e gavetas (bottom sheets) para anexos e ações.
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -34,6 +34,7 @@ import ChatWallpaper from "../../components/ChatWallpaper";
 import GifPickerModal from "../../components/GifPickerModal";
 import ScheduleModal from "../../components/ScheduleModal";
 import InviteCard from "../../components/InviteCard";
+import MeetingCard from "../../components/MeetingCard";
 import { radius, spacing, typography } from "../../styles/theme";
 import { useTheme, useThemedStyles } from "../../contexts/ThemeContext";
 import { blockUser } from "../../services/block";
@@ -45,7 +46,7 @@ import {
 } from "../../services/activeConversation";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../hooks/useChat";
-import { MESSAGE_STATUS, messagePreviewLabel } from "../../utils/chatMessages";
+import { MESSAGE_STATUS, buildReplyQuote, replyQuoteText } from "../../utils/chatMessages";
 import { resolveMediaUrl } from "../../utils/mediaUrl";
 import { tapLight } from "../../utils/haptics";
 
@@ -127,18 +128,49 @@ function MessageMeta({ message, overlay = false }) {
   );
 }
 
-function ReplyQuote({ replyTo, isMine }) {
+// Ícone da citação conforme o tipo da mensagem original.
+const REPLY_ICONS = {
+  image: "image-outline",
+  view_once: "eye-outline",
+  location: "location-outline",
+  invite: "calendar-outline",
+  invite_answer: "calendar-outline",
+  deleted: "ban-outline",
+};
+
+export function replyAuthor(replyTo, contactName) {
+  if (!replyTo) return "";
+  if (replyTo.isMine || replyTo.sender === "Você") return "Você";
+  return replyTo.sender || contactName || "Contato";
+}
+
+function ReplyQuote({ replyTo, isMine, contactName, onPress }) {
   const styles = useThemedStyles(createStyles);
-  if (!replyTo?.content) return null;
+  if (!replyTo) return null;
+  const texto = replyQuoteText(replyTo);
+  if (!texto) return null;
+  const icone = REPLY_ICONS[replyTo.type];
+  const autor = replyAuthor(replyTo, contactName);
   return (
-    <View style={[styles.quote, isMine ? styles.quoteSent : styles.quoteReceived]}>
+    <Pressable
+      testID="chat-reply-quote"
+      onPress={replyTo.id ? () => onPress?.(replyTo.id) : undefined}
+      style={[styles.quote, isMine ? styles.quoteSent : styles.quoteReceived]}
+      accessibilityRole="button"
+      accessibilityLabel={`Mensagem citada de ${autor}: ${texto}. Toque para ver a original`}
+    >
       <Text style={[styles.quoteSender, isMine && styles.quoteSenderSent]} numberOfLines={1}>
-        {replyTo.sender === "Você" ? "Você" : replyTo.sender || "Mensagem"}
+        {autor}
       </Text>
-      <Text style={[styles.quoteText, isMine && styles.quoteTextSent]} numberOfLines={2}>
-        {replyTo.content}
-      </Text>
-    </View>
+      <View style={styles.quoteBody}>
+        {icone ? (
+          <Ionicons name={icone} size={13} style={[styles.quoteIcon, isMine ? styles.quoteTextSent : styles.quoteText]} />
+        ) : null}
+        <Text style={[styles.quoteText, isMine && styles.quoteTextSent, styles.quoteTextFlex]} numberOfLines={2}>
+          {texto}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -183,6 +215,10 @@ function MessageBubble({
   responding,
   onOpenViewOnce,
   openingViewOnceId,
+  contactName,
+  onQuotePress,
+  onOpenMeeting,
+  highlighted = false,
 }) {
   const styles = useThemedStyles(createStyles);
   const failed = message.status === MESSAGE_STATUS.FAILED;
@@ -212,6 +248,27 @@ function MessageBubble({
           opening={openingViewOnceId === message.id}
           onOpen={onOpenViewOnce}
         />
+        <MessageMeta message={message} />
+      </View>
+    );
+  } else if (message.meeting) {
+    body = (
+      <>
+        <MeetingCard meeting={message.meeting} onOpen={() => onOpenMeeting?.(message.meeting)} />
+        <View style={styles.metaRowEnd}>
+          <MessageMeta message={message} />
+        </View>
+      </>
+    );
+  } else if (message.inviteStatus === "rejected") {
+    body = (
+      <View style={styles.inlineRow}>
+        <View style={styles.deletedRow}>
+          <Ionicons name="close-circle-outline" size={15} color={mine ? styles.metaTimeSent.color : styles.metaTimeReceived.color} />
+          <Text style={[styles.messageText, styles.deletedText, mine ? styles.textSent : styles.textReceived]}>
+            Convite recusado
+          </Text>
+        </View>
         <MessageMeta message={message} />
       </View>
     );
@@ -288,7 +345,9 @@ function MessageBubble({
           mine ? styles.bubbleSent : styles.bubbleReceived,
           tail && (mine ? styles.tailSent : styles.tailReceived),
           message.isImage && !deleted && styles.bubbleMedia,
+          message.meeting && !deleted && styles.bubbleCard,
           failed && styles.bubbleFailed,
+          highlighted && styles.bubbleHighlighted,
           pressed && styles.bubblePressed,
         ]}
         accessibilityRole="button"
@@ -296,7 +355,9 @@ function MessageBubble({
           failed ? "Mensagem não enviada. Toque para tentar de novo" : "Segure para ações da mensagem"
         }
       >
-        {!deleted ? <ReplyQuote replyTo={message.replyTo} isMine={mine} /> : null}
+        {!deleted ? (
+          <ReplyQuote replyTo={message.replyTo} isMine={mine} contactName={contactName} onPress={onQuotePress} />
+        ) : null}
         {body}
         {failed ? <Text style={styles.failedHint}>Não enviada · toque para tentar de novo</Text> : null}
       </Pressable>
@@ -327,6 +388,9 @@ export default function Chat({ navigation, route }) {
   const [openingViewOnceId, setOpeningViewOnceId] = useState(null);
   const [respondingInvite, setRespondingInvite] = useState(false);
   const [replyTo, setReplyTo] = useState(null);
+  const [highlightId, setHighlightId] = useState(null);
+  const listRef = useRef(null);
+  const highlightTimer = useRef(null);
 
   // T049 — aberto por notificação: veio só o id da conversa → busca o contato.
   const needsContactLookup = paramConversationId != null && (!paramContactName || paramContactId == null);
@@ -427,7 +491,7 @@ export default function Chat({ navigation, route }) {
     if (!text || !conversationId) return;
     tapLight();
     setDraft("");
-    sendMessage(text, replyTo);
+    sendMessage(text, currentQuote());
     setReplyTo(null);
   }
 
@@ -454,7 +518,9 @@ export default function Chat({ navigation, route }) {
   function handlePreviewSend({ caption, viewOnce }) {
     const asset = previewAsset;
     setPreviewAsset(null);
-    if (asset) sendImage(asset, { caption, viewOnce });
+    const quote = currentQuote();
+    if (asset) sendImage(asset, quote ? { caption, viewOnce, replyTo: quote } : { caption, viewOnce });
+    setReplyTo(null);
   }
 
   async function handleShareLocation() {
@@ -468,7 +534,7 @@ export default function Chat({ navigation, route }) {
       const { latitude, longitude } = position.coords;
       // Mesmo formato do web (handleLocation).
       const text = `📍 Localização partilhada:\nhttp://maps.google.com/maps?q=${latitude},${longitude}`;
-      sendMessage(text, replyTo);
+      sendMessage(text, currentQuote());
       setReplyTo(null);
     } catch (err) {
       console.error("Erro ao obter localização:", err?.message || err);
@@ -478,7 +544,7 @@ export default function Chat({ navigation, route }) {
 
   function handleSelectGif(url) {
     setGifOpen(false);
-    sendMessage(url, replyTo);
+    sendMessage(url, currentQuote());
     setReplyTo(null);
   }
 
@@ -520,6 +586,31 @@ export default function Chat({ navigation, route }) {
   }
 
   // ── Ações da mensagem (segurar) ───────────────────────────────────────
+  // Citação da mensagem escolhida em "Responder" (com o nome do contato).
+  function currentQuote() {
+    return replyTo ? buildReplyQuote(replyTo, { contactName }) : null;
+  }
+
+  // Toque na citação: rola suave até a original e destaca por um instante.
+  function scrollToMessage(id) {
+    const index = messages.findIndex((m) => String(m.id) === String(id));
+    if (index === -1) {
+      toast.show("A mensagem original não está carregada.", { type: "info" });
+      return;
+    }
+    listRef.current?.scrollToIndex?.({ index, animated: true, viewPosition: 0.5 });
+    setHighlightId(String(id));
+    clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightId(null), 1600);
+  }
+
+  useEffect(() => () => clearTimeout(highlightTimer.current), []);
+
+  // Card "Encontro marcado" → aba Encontros (no dia do encontro, se houver).
+  function openMeeting(meeting) {
+    navigation?.navigate?.("Encontros", meeting?.scheduled_at ? { focusDate: meeting.scheduled_at } : undefined);
+  }
+
   function handleMessageLongPress(message) {
     if (!message || String(message.id).startsWith("temp-")) return;
     setActionMessage(message);
@@ -529,9 +620,9 @@ export default function Chat({ navigation, route }) {
     const message = actionMessage;
     if (!message) return [];
     const deleted = message.text === DELETED_TEXT;
-    const textual = !deleted && !message.isImage && !message.isViewOnce;
+    const textual = !deleted && !message.isImage && !message.isViewOnce && !message.meeting && !message.inviteStatus;
     const options = [];
-    if (!deleted && !message.isViewOnce) {
+    if (!deleted) {
       options.push({
         key: "reply", testID: "message-action-reply", label: "Responder", icon: "arrow-undo-outline",
         onPress: () => setReplyTo(message),
@@ -621,9 +712,15 @@ export default function Chat({ navigation, route }) {
     if (messages.length > 0) {
       return (
         <FlatList
+          ref={listRef}
           testID="chat-message-list"
           data={messages}
           inverted
+          onScrollToIndexFailed={({ index, averageItemLength }) => {
+            // Item ainda não medido: chega perto e tenta de novo.
+            listRef.current?.scrollToOffset?.({ offset: averageItemLength * index, animated: true });
+            setTimeout(() => listRef.current?.scrollToIndex?.({ index, animated: true, viewPosition: 0.5 }), 250);
+          }}
           keyExtractor={(message) => message.id}
           renderItem={({ item, index }) => (
             <MessageBubble
@@ -636,6 +733,10 @@ export default function Chat({ navigation, route }) {
               responding={respondingInvite}
               onOpenViewOnce={handleOpenViewOnce}
               openingViewOnceId={openingViewOnceId}
+              contactName={contactName}
+              onQuotePress={scrollToMessage}
+              onOpenMeeting={openMeeting}
+              highlighted={highlightId === String(item.id)}
             />
           )}
           contentContainerStyle={styles.messageList}
@@ -754,15 +855,20 @@ export default function Chat({ navigation, route }) {
         {/* Barra de resposta (citação) acima do campo, com X para cancelar */}
         {replyTo ? (
           <View style={styles.replyBanner} testID="chat-reply-banner">
-            <View style={styles.replyBar} />
-            <View style={styles.replyContent}>
-              <Text style={styles.replySender} numberOfLines={1}>
-                Respondendo {replyTo.isMine ? "a você" : contactName}
-              </Text>
-              <Text style={styles.replyPreview} numberOfLines={1}>
-                {messagePreviewLabel(replyTo)}
-              </Text>
-            </View>
+            <View style={styles.replyBox}>
+              <View style={styles.replyContent}>
+                <Text style={styles.replySender} numberOfLines={1}>
+                  {replyAuthor(buildReplyQuote(replyTo, { contactName }), contactName)}
+                </Text>
+                <View style={styles.quoteBody}>
+                  {REPLY_ICONS[buildReplyQuote(replyTo).type] ? (
+                    <Ionicons name={REPLY_ICONS[buildReplyQuote(replyTo).type]} size={13} color={colors.textSecondary} style={styles.quoteIcon} />
+                  ) : null}
+                  <Text style={[styles.replyPreview, styles.quoteTextFlex]} numberOfLines={1}>
+                    {replyQuoteText(buildReplyQuote(replyTo))}
+                  </Text>
+                </View>
+              </View>
             <Pressable
               testID="chat-reply-cancel"
               onPress={() => setReplyTo(null)}
@@ -772,6 +878,7 @@ export default function Chat({ navigation, route }) {
             >
               <Ionicons name="close" size={20} color={colors.textSecondary} />
             </Pressable>
+            </View>
           </View>
         ) : null}
 
@@ -1066,6 +1173,13 @@ const createStyles = (colors) =>
       borderWidth: 1,
       borderColor: colors.danger,
     },
+    bubbleCard: {
+      padding: 4,
+    },
+    bubbleHighlighted: {
+      borderWidth: 2,
+      borderColor: colors.accent,
+    },
     bubblePressed: {
       opacity: 0.85,
     },
@@ -1140,18 +1254,31 @@ const createStyles = (colors) =>
     deletedText: {
       fontStyle: "italic",
     },
-    // Citação (responder) dentro do balão
+    // Citação (responder) dentro do balão: bloco arredondado com barra
+    // colorida à esquerda, autor e até 2 linhas do texto citado.
     quote: {
-      borderLeftWidth: 3,
-      paddingLeft: 8,
-      paddingVertical: 4,
-      paddingRight: 8,
-      marginBottom: 4,
-      borderRadius: 6,
+      borderLeftWidth: 4,
+      paddingLeft: 9,
+      paddingVertical: 5,
+      paddingRight: 10,
+      marginBottom: 5,
+      borderRadius: 8,
+      minWidth: 150,
     },
     quoteSent: {
-      borderLeftColor: colors.bubbleSentText,
-      backgroundColor: "rgba(0,0,0,0.14)",
+      borderLeftColor: "rgba(255,255,255,0.85)",
+      backgroundColor: "rgba(0,0,0,0.18)",
+    },
+    quoteBody: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      columnGap: 4,
+    },
+    quoteIcon: {
+      marginTop: 2,
+    },
+    quoteTextFlex: {
+      flexShrink: 1,
     },
     quoteReceived: {
       borderLeftColor: colors.accent,
@@ -1204,22 +1331,25 @@ const createStyles = (colors) =>
       color: colors.accent,
       marginTop: 1,
     },
-    // Barra de resposta acima do campo
+    // Barra de resposta acima do campo (borda roxa, autor e prévia)
     replyBanner: {
-      flexDirection: "row",
-      alignItems: "center",
-      columnGap: 10,
-      paddingHorizontal: spacing.md,
-      paddingVertical: 8,
+      paddingHorizontal: spacing.sm,
+      paddingTop: 8,
       backgroundColor: colors.surface,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
     },
-    replyBar: {
-      width: 3,
-      alignSelf: "stretch",
-      borderRadius: 2,
-      backgroundColor: colors.accent,
+    replyBox: {
+      flexDirection: "row",
+      alignItems: "center",
+      columnGap: 10,
+      paddingVertical: 7,
+      paddingLeft: 10,
+      paddingRight: 8,
+      borderLeftWidth: 4,
+      borderLeftColor: colors.primary,
+      borderRadius: 8,
+      backgroundColor: colors.surfaceMuted,
     },
     replyContent: {
       flex: 1,

@@ -3,6 +3,7 @@
 // O envio "normal" é pelo socket (src/hooks/useChat.js); a rota REST é usada
 // quando o socket está desconectado, para a mensagem nunca se perder.
 import api from "./api";
+import { isServerId } from "../utils/chatMessages";
 import { multipartUploadConfig } from "./uploadConfig";
 
 export const MESSAGES_PAGE_SIZE = 30;
@@ -25,18 +26,19 @@ export async function fetchMessages(conversationId, { page = 1, limit = MESSAGES
 }
 
 // POST /api/mensagens { conversation_id, content } → mensagem salva
-export async function sendMessageRest(conversationId, content) {
-  const { data } = await api.post("/api/mensagens", {
-    conversation_id: conversationId,
-    content,
-  });
+// `replyToId` (opcional): id da mensagem citada (resposta estilo WhatsApp).
+export async function sendMessageRest(conversationId, content, replyToId = null) {
+  const body = { conversation_id: conversationId, content };
+  if (isServerId(replyToId)) body.reply_to_id = replyToId;
+  const { data } = await api.post("/api/mensagens", body);
   return data;
 }
+
 
 // Anexo de FOTO — mesmo endpoint do web (POST /api/mensagens/imagem, multer +
 // Cloudinary, campo "image"). O backend salva, emite new_message na sala e
 // devolve a mensagem salva (content = URL do Cloudinary).
-export async function sendChatImage(conversationId, asset, { caption = "", viewOnce = false } = {}) {
+export async function sendChatImage(conversationId, asset, { caption = "", viewOnce = false, replyToId = null } = {}) {
   const uri = asset?.uri;
   if (conversationId == null || !uri) {
     throw new Error("Imagem inválida para envio.");
@@ -46,6 +48,7 @@ export async function sendChatImage(conversationId, asset, { caption = "", viewO
   // Legenda opcional e foto de visualização única (abre UMA vez).
   if (caption && caption.trim()) formData.append("caption", caption.trim());
   if (viewOnce) formData.append("is_view_once", "true");
+  if (isServerId(replyToId)) formData.append("reply_to_id", String(replyToId));
   formData.append("image", {
     uri,
     name: asset.fileName || `chat-${Date.now()}.jpg`,

@@ -731,3 +731,95 @@ describe("Chat — foto de visualização única", () => {
     expect(screen.getByText("Aberta")).toBeTruthy();
   });
 });
+
+describe("Chat — resposta com citação (reply_to)", () => {
+  const ORIGINAL = { id: "4", text: "Bora no sábado?", time: "14:32", isMine: false, isImage: false, status: "sent" };
+  const RESPOSTA = {
+    id: "5", text: "Sábado sim!", time: "14:33", isMine: true, isImage: false, status: "read",
+    replyTo: { id: "4", senderId: "u2", sender: "Ana Lima", isMine: false, type: "text", content: "Bora no sábado?" },
+  };
+
+  it("o balão enviado mostra a citação com autor e texto", () => {
+    mockChatState({ messages: [RESPOSTA, ORIGINAL] });
+    renderChat();
+    const quote = screen.getByTestId("chat-reply-quote");
+    expect(quote).toBeTruthy();
+    expect(screen.getAllByText("Ana Lima").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Bora no sábado?").length).toBe(2); // original + citação
+  });
+
+  it("tocar na citação rola até a mensagem original", () => {
+    mockChatState({ messages: [RESPOSTA, ORIGINAL] });
+    const scrollSpy = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => {});
+    renderChat();
+    fireEvent.press(screen.getByTestId("chat-reply-quote"));
+    expect(scrollSpy).toHaveBeenCalledWith(expect.objectContaining({ index: 1, animated: true }));
+    scrollSpy.mockRestore();
+  });
+
+  it("citação de foto mostra o rótulo, nunca a URL", () => {
+    mockChatState({
+      messages: [{
+        ...RESPOSTA,
+        replyTo: { id: "9", senderId: "u2", sender: "Ana Lima", isMine: false, type: "image", content: "Foto" },
+      }],
+    });
+    renderChat();
+    expect(screen.getByText("Foto")).toBeTruthy();
+  });
+
+  it("Responder mostra autor e prévia na barra e envia a citação com o nome do contato", () => {
+    mockChatState({ messages: [ORIGINAL] });
+    renderChat();
+    fireEvent(screen.getByTestId("chat-message-touch-4"), "longPress");
+    fireEvent.press(screen.getByTestId("message-action-reply"));
+    const banner = screen.getByTestId("chat-reply-banner");
+    expect(banner).toBeTruthy();
+    fireEvent.changeText(screen.getByTestId("chat-message-input"), "Sábado sim!");
+    fireEvent.press(screen.getByTestId("chat-send-button"));
+    expect(sendMessage).toHaveBeenCalledWith(
+      "Sábado sim!",
+      expect.objectContaining({ id: "4", sender: "Ana Lima", type: "text", content: "Bora no sábado?" })
+    );
+    expect(screen.queryByTestId("chat-reply-banner")).toBeNull();
+  });
+});
+
+describe("Chat — card Encontro marcado", () => {
+  it("convite aceito vira o card com data, local e atalho para Encontros", () => {
+    mockChatState({
+      messages: [{
+        id: "7", text: "[ENCONTRO_MARCADO]{}", time: "10:05", isMine: false, isImage: false, status: "read",
+        inviteStatus: "accepted",
+        meeting: { titulo: "Café", local: "Dragão do Mar", scheduled_at: "2026-11-22T19:00:00.000Z" },
+      }],
+    });
+    const { navigation } = renderChat();
+    expect(screen.getByTestId("meeting-card")).toBeTruthy();
+    expect(screen.getByText("Encontro marcado")).toBeTruthy();
+    expect(screen.getByText("Café")).toBeTruthy();
+    expect(screen.getByText("Dragão do Mar")).toBeTruthy();
+    expect(screen.queryByText("✅ Convite Aceite!")).toBeNull();
+
+    fireEvent.press(screen.getByTestId("meeting-card-open"));
+    expect(navigation.navigate).toHaveBeenCalledWith("Encontros", { focusDate: "2026-11-22T19:00:00.000Z" });
+  });
+
+  it("aceite antigo sem detalhes também mostra o card", () => {
+    mockChatState({
+      messages: [{ id: "8", text: "✅ Convite Aceite!", time: "10:05", isMine: true, isImage: false, status: "read", inviteStatus: "accepted", meeting: {} }],
+    });
+    const { navigation } = renderChat();
+    expect(screen.getByText("Encontro marcado")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("meeting-card-open"));
+    expect(navigation.navigate).toHaveBeenCalledWith("Encontros", undefined);
+  });
+
+  it("convite recusado mostra o aviso sem emoji", () => {
+    mockChatState({
+      messages: [{ id: "9", text: "❌ Convite Recusado", time: "10:05", isMine: false, isImage: false, status: "read", inviteStatus: "rejected", meeting: null }],
+    });
+    renderChat();
+    expect(screen.getByText("Convite recusado")).toBeTruthy();
+  });
+});

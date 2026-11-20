@@ -482,7 +482,26 @@ describe("useChat — anexos e ações da mensagem", () => {
     });
 
     expect(result.current.messages[0]).toMatchObject({ text: "claro!", status: "pending" });
-    expect(result.current.messages[0].replyTo).toEqual({ content: "Tudo ótimo!", sender: null });
+    expect(result.current.messages[0].replyTo).toMatchObject({ id: original.id, content: "Tudo ótimo!", type: "text" });
+    // O id da citada vai para a API, que salva e devolve o reply_to completo.
+    expect(emitWithAck).toHaveBeenCalledWith("send_message", expect.objectContaining({ reply_to_id: original.id }));
+  });
+
+  it("resposta confirmada pela API usa o reply_to do servidor (com o nome do autor)", async () => {
+    const { result } = await renderChatHook();
+    const original = result.current.messages.find((m) => m.text === "Tudo ótimo!");
+    emitWithAck.mockResolvedValue({
+      ok: true,
+      message: {
+        id: 77, conversation_id: 10, sender_id: ME, content: "claro!", status: "sent",
+        reply_to: { id: Number(original.id), sender_id: "outro", sender_name: "Marina", type: "text", content: "Tudo ótimo!" },
+      },
+    });
+    await act(async () => {
+      await result.current.sendMessage("claro!", original);
+    });
+    const salva = result.current.messages.find((m) => m.id === "77");
+    expect(salva.replyTo).toMatchObject({ sender: "Marina", content: "Tudo ótimo!", isMine: false });
   });
 
   it("deleteForEveryone marca apagada e chama a API", async () => {
@@ -552,7 +571,9 @@ describe("useChat — convite de encontro (agendamento)", () => {
 
     expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({ other_user_id: "u-sender", titulo: "Café" }));
     expect(respondInvite).toHaveBeenCalledWith(invite.id, "aceite");
-    expect(result.current.messages.find((m) => m.id === invite.id).text).toBe("✅ Convite Aceite!");
+    const aceito = result.current.messages.find((m) => m.id === invite.id);
+    expect(aceito.meeting).toMatchObject({ titulo: "Café" });
+    expect(aceito.inviteStatus).toBe("accepted");
   });
 
   it("respondToInvite (recusar) não cria evento", async () => {
@@ -572,7 +593,7 @@ describe("useChat — convite de encontro (agendamento)", () => {
     const { result } = await renderChatHook();
     act(() => socket.fire("new_message", { id: 52, conversation_id: 10, sender_id: ME, content: `[CONVITE_EVENTO]${JSON.stringify(INVITE)}` }));
     act(() => socket.fire("invite_updated", { messageId: "52", status: "aceite" }));
-    expect(result.current.messages.find((m) => m.id === "52").text).toBe("✅ Convite Aceite!");
+    expect(result.current.messages.find((m) => m.id === "52").meeting).toMatchObject({ titulo: "Café" });
   });
 });
 

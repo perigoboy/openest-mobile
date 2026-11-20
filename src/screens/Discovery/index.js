@@ -14,6 +14,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,7 +22,8 @@ import { Avatar, DiscoveryCard, Loader } from "../../components";
 import { useAuth } from "../../contexts/AuthContext";
 import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPreferences";
 import { avatarFallback, fetchCompatibleProfiles } from "../../services/discovery";
-import { likeProfile } from "../../services/interactions";
+import { likeProfile, passProfile } from "../../services/interactions";
+import { CARD_SCREEN_RATIO } from "../../components/DiscoveryCard";
 import { distanceKm } from "../../services/userLocation";
 import { fetchMyProfile } from "../../services/profile";
 import { resolveMediaUrl } from "../../utils/mediaUrl";
@@ -84,6 +86,9 @@ export default function Discovery({ navigation }) {
   const [liking, setLiking] = useState(false);
   const [matchProfile, setMatchProfile] = useState(null);
   const isLiking = useRef(false);
+  // Cartão atual: os botões ♥ / X disparam a mesma saída animada do gesto.
+  const cardRef = useRef(null);
+  const { height: windowHeight } = useWindowDimensions();
   const userPhoto = Array.isArray(user?.photos)
     ? user.photos.find((photo) => typeof photo === "string" && photo.startsWith("http"))
     : null;
@@ -95,6 +100,7 @@ export default function Discovery({ navigation }) {
     (item) => !hiddenProfileIds.current.has(item.id)
   );
   const profile = visibleDeck[index] || null;
+  const nextProfile = visibleDeck[index + 1] || null;
 
   // Busca os perfis compatíveis na API e reseta o baralho para o 1º card.
   const loadProfiles = useCallback(async (currentPrefs) => {
@@ -197,13 +203,27 @@ export default function Discovery({ navigation }) {
     }
   }, [profile]);
 
+  // Chamado quando o cartão JÁ saiu da tela (gesto ou botões).
   function handleCardSwipe(direction) {
     if (isLiking.current) return;
     if (direction === "like") {
       return handleLike();
-    } else {
-      next();
     }
+    // Passar fica registrado na API (como no web) e o perfil não volta.
+    if (profile && typeof passProfile === "function") {
+      Promise.resolve(passProfile(profile.id)).catch((error) =>
+        console.error("Erro ao passar perfil:", error?.response?.status, error?.response?.data || error?.message)
+      );
+    }
+    next();
+  }
+
+  // Botões: animam o cartão para o lado antes de trocar de perfil. Sem o
+  // cartão montado (ex.: carregando), cai direto na ação.
+  function swipeWithButton(direction) {
+    if (isLiking.current || !profile) return;
+    if (cardRef.current?.swipe) cardRef.current.swipe(direction);
+    else handleCardSwipe(direction);
   }
 
   function dismissMatch() {
@@ -335,12 +355,22 @@ export default function Discovery({ navigation }) {
             // T030: loader inline enquanto a API responde.
             <Loader />
           ) : profile ? (
+            <View style={[styles.deckStack, { maxHeight: Math.round(windowHeight * CARD_SCREEN_RATIO) }]}>
+              {/* Próximo perfil espiando atrás: quando o cartão sai, ele já está ali. */}
+              {nextProfile?.photo ? (
+                <View style={styles.peek} pointerEvents="none" testID="discovery-next-peek">
+                  <Image source={{ uri: nextProfile.photo }} style={styles.peekImage} resizeMode="cover" />
+                </View>
+              ) : null}
             <DiscoveryCard
+              key={profile.id}
+              ref={cardRef}
               profile={profile}
               onSwipe={handleCardSwipe}
               onReportPress={() => openReportModal(profile)}
               onBlockPress={() => handleBlockUser(profile)}
             />
+            </View>
           ) : (
             <View style={styles.empty}>
               <View style={styles.emptyBadge}>
@@ -374,7 +404,7 @@ export default function Discovery({ navigation }) {
             style={[styles.actionButton, styles.actionSecondary]}
             onPress={() => {
               tapLight();
-              next();
+              swipeWithButton("pass");
             }}
             disabled={liking}
             activeOpacity={0.8}
@@ -402,7 +432,7 @@ export default function Discovery({ navigation }) {
             style={[styles.actionButton, styles.actionPrimary]}
             onPress={() => {
               tapMedium();
-              handleLike();
+              swipeWithButton("like");
             }}
             disabled={liking}
             activeOpacity={0.85}
@@ -607,6 +637,17 @@ const createStyles = (colors) =>
     },
     pillText: { ...typography.label, fontSize: 12, color: colors.textPrimary, flexShrink: 1 },
     cardArea: { flex: 1, justifyContent: "center", paddingVertical: 10, overflow: "hidden" },
+    // Pilha: cartão atual por cima e o próximo espiando atrás (mesmo tamanho).
+    deckStack: { flex: 1, width: "100%" },
+    peek: {
+      ...StyleSheet.absoluteFillObject,
+      borderRadius: 24,
+      overflow: "hidden",
+      backgroundColor: colors.surfaceMuted,
+      transform: [{ scale: 0.95 }, { translateY: 10 }],
+      opacity: 0.85,
+    },
+    peekImage: { width: "100%", height: "100%" },
     empty: {
       borderRadius: radius.xl,
       padding: spacing.lg,

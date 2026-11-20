@@ -42,6 +42,8 @@ import {
   mergeIncomingMessage,
   normalizeMessageList,
   setMessageStatus,
+  buildReplyQuote,
+  isServerId,
 } from "../utils/chatMessages";
 
 // Sem digitar por este tempo, avisa que parou (mesmo valor do web).
@@ -159,7 +161,8 @@ export function useChat(conversationId, currentUserId) {
     };
     const handleInviteUpdated = (payload) => {
       if (!payload?.messageId) return;
-      setMessages((list) => applyInviteResponse(list, payload.messageId, payload.status));
+      // A API manda o conteúdo/meeting definitivos: o card já sai completo.
+      setMessages((list) => applyInviteResponse(list, payload.messageId, payload.status, payload));
     };
     const handleUserTyping = (payload) => {
       // O servidor só repassa para os OUTROS da sala, mas o web antigo pode
@@ -238,21 +241,23 @@ export function useChat(conversationId, currentUserId) {
     [conversationId, currentUserId, hasConversation, stopTyping]
   );
 
+  // `replyToId` = id (no servidor) da mensagem citada, ou null.
   const deliver = useCallback(
-    async (tempId, text) => {
+    async (tempId, text, replyToId = null) => {
       const sentTo = conversationId;
       const stillHere = () => mounted.current && String(currentConversation.current) === String(sentTo);
       try {
         let saved;
         if (isSocketConnected()) {
-          const response = await emitWithAck(SOCKET_EVENTS.SEND_MESSAGE, {
-            conversation_id: conversationId,
-            content: text,
-          });
+          const payload = { conversation_id: conversationId, content: text };
+          if (isServerId(replyToId)) payload.reply_to_id = replyToId;
+          const response = await emitWithAck(SOCKET_EVENTS.SEND_MESSAGE, payload);
           if (!response?.ok) throw new Error(response?.error || "Falha ao enviar a mensagem.");
           saved = response.message;
         } else {
-          saved = await sendMessageRest(conversationId, text);
+          saved = isServerId(replyToId)
+            ? await sendMessageRest(conversationId, text, replyToId)
+            : await sendMessageRest(conversationId, text);
         }
         if (stillHere()) {
           setMessages((list) => confirmPendingMessage(list, tempId, saved, currentUserId));
@@ -274,19 +279,18 @@ export function useChat(conversationId, currentUserId) {
     return `temp-${Date.now()}-${tempCounter.current}`;
   }, []);
 
-  // `replyTo` (opcional) = mensagem citada. Fica só na bolha local (o backend
-  // não persiste a citação — igual ao web).
+  // `replyTo` (opcional) = mensagem citada (ou a citação já montada). O id
+  // vai para a API (reply_to_id), que salva e devolve o `reply_to` completo;
+  // a bolha otimista já mostra a citação enquanto isso.
   const sendMessage = useCallback(
     (rawText, replyTo = null) => {
       const text = String(rawText || "").trim();
       if (!text || !hasConversation) return Promise.resolve(false);
       stopTyping();
       const tempId = nextTempId();
-      const quote = replyTo
-        ? { content: replyTo.text ?? replyTo.content, sender: replyTo.isMine ? "Você" : (replyTo.sender || null) }
-        : null;
+      const quote = buildReplyQuote(replyTo);
       setMessages((list) => [createPendingMessage(tempId, text, { replyTo: quote }), ...list]);
-      return deliver(tempId, text);
+      return deliver(tempId, text, quote?.id ?? null);
     },
     [deliver, hasConversation, stopTyping, nextTempId]
   );
@@ -300,10 +304,12 @@ export function useChat(conversationId, currentUserId) {
       const sentTo = conversationId;
       const stillHere = () => mounted.current && String(currentConversation.current) === String(sentTo);
       const tempId = nextTempId();
+      const quote = buildReplyQuote(options.replyTo || null);
       const opts = { caption: options.caption || "", viewOnce: !!options.viewOnce };
-      setMessages((list) => [createPendingImageMessage(tempId, asset.uri, undefined, opts), ...list]);
+      setMessages((list) => [createPendingImageMessage(tempId, asset.uri, undefined, { ...opts, replyTo: quote }), ...list]);
       try {
-        const saved = await sendChatImage(conversationId, asset, opts);
+        const envio = isServerId(quote?.id) ? { ...opts, replyToId: quote.id } : opts;
+        const saved = await sendChatImage(conversationId, asset, envio);
         if (stillHere()) setMessages((list) => confirmPendingMessage(list, tempId, saved, currentUserId));
         return true;
       } catch (err) {
@@ -319,7 +325,7 @@ export function useChat(conversationId, currentUserId) {
     (message) => {
       if (!message || message.status !== MESSAGE_STATUS.FAILED) return Promise.resolve(false);
       setMessages((list) => setMessageStatus(list, message.id, MESSAGE_STATUS.PENDING));
-      return deliver(message.id, message.text);
+      return deliver(message.id, message.text, message.replyTo?.id ?? null);
     },
     [deliver]
   );
