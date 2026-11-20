@@ -5,7 +5,8 @@
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, radius, spacing, typography } from "../styles/theme";
+import { radius, spacing, typography } from "../styles/theme";
+import { useTheme, useThemedStyles } from "../contexts/ThemeContext";
 
 function formatWhen(scheduledAt) {
   if (!scheduledAt) return null;
@@ -15,24 +16,26 @@ function formatWhen(scheduledAt) {
 }
 
 export default function InviteCard({ invite, isMine, responding, onAccept, onReject }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const when = formatWhen(invite?.scheduled_at);
   return (
     <View style={styles.card} testID="invite-card">
       <View style={styles.header}>
-        <Ionicons name="calendar" size={16} color={colors.white} />
-        <Text style={styles.headerText}>Convite de Encontro</Text>
+        <Ionicons name="calendar-outline" size={15} color={colors.onPrimary} />
+        <Text style={styles.headerText}>Convite de encontro</Text>
       </View>
       <View style={styles.body}>
         <Text style={styles.titulo} numberOfLines={2}>{invite?.titulo || "Encontro"}</Text>
         {invite?.local ? (
           <View style={styles.row}>
-            <Ionicons name="location" size={14} color={colors.primaryLight} />
+            <Ionicons name="location-outline" size={14} color={colors.accent} />
             <Text style={styles.rowText} numberOfLines={1}>{invite.local}</Text>
           </View>
         ) : null}
         {when ? (
           <View style={styles.row}>
-            <Ionicons name="time" size={14} color={colors.primaryLight} />
+            <Ionicons name="time-outline" size={14} color={colors.accent} />
             <Text style={styles.rowText}>{when}</Text>
           </View>
         ) : null}
@@ -69,7 +72,8 @@ export default function InviteCard({ invite, isMine, responding, onAccept, onRej
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) =>
+  StyleSheet.create({
   card: {
     width: 248,
     borderRadius: radius.md,
@@ -86,17 +90,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
   },
-  headerText: { ...typography.caption, fontWeight: "700", color: colors.white },
+  headerText: { ...typography.caption, fontWeight: "700", color: colors.onPrimary },
   body: { padding: spacing.sm, rowGap: spacing.xs },
-  titulo: { ...typography.body, fontWeight: "700", color: colors.text },
+  titulo: { ...typography.body, fontWeight: "700", color: colors.textPrimary },
   row: { flexDirection: "row", alignItems: "center", columnGap: spacing.xs },
-  rowText: { ...typography.caption, color: colors.text, flex: 1 },
+  rowText: { ...typography.caption, color: colors.textPrimary, flex: 1 },
   nota: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
   waiting: { ...typography.caption, fontStyle: "italic", color: colors.textMuted, marginTop: spacing.xs },
   actions: { flexDirection: "row", columnGap: spacing.sm, marginTop: spacing.sm },
   btn: { flex: 1, height: 38, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
-  accept: { backgroundColor: colors.success },
-  acceptText: { ...typography.body, fontWeight: "700", color: colors.white },
-  reject: { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.danger },
-  rejectText: { ...typography.body, fontWeight: "700", color: colors.danger },
+  accept: { backgroundColor: colors.primary },
+  acceptText: { ...typography.label, color: colors.onPrimary },
+  reject: { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.border },
+  rejectText: { ...typography.label, color: colors.dangerText },
 });

@@ -23,6 +23,8 @@ jest.mock("../../src/services/socket", () => {
   const fake = {
     connected: false,
     handlers,
+    emit: jest.fn(),
+    connect: jest.fn(),
     on: jest.fn((event, fn) => {
       (handlers[event] = handlers[event] || new Set()).add(fn);
     }),
@@ -32,7 +34,13 @@ jest.mock("../../src/services/socket", () => {
     },
   };
   return {
-    SOCKET_EVENTS: { NOTIFICATION: "notification", NEW_MATCH: "new_match" },
+    SOCKET_EVENTS: {
+      NOTIFICATION: "notification",
+      NEW_MATCH: "new_match",
+      NEW_MESSAGE: "new_message",
+      MESSAGE_DELIVERED_ACK: "message_delivered_ack",
+      MARK_MESSAGES_READ: "mark_messages_read",
+    },
     connectSocket: jest.fn(),
     disconnectSocket: jest.fn(),
     getSocket: () => fake,
@@ -65,6 +73,8 @@ function renderProvider() {
 beforeEach(() => {
   jest.clearAllMocks();
   Object.keys(socket.handlers).forEach((k) => delete socket.handlers[k]);
+  socket.emit.mockClear();
+  socket.connect.mockClear();
   clearActiveConversation();
   mockAuth = { signed: true, user: { id: "me" } };
   SecureStore.getItemAsync.mockResolvedValue("jwt-real");
@@ -197,5 +207,42 @@ describe("handleRealtimeEvent", () => {
     expect(isMockToken("mock-token-admin-123")).toBe(true);
     expect(isMockToken("eyJhbGciOi...")).toBe(false);
     expect(isMockToken(null)).toBe(false);
+  });
+});
+
+// --- ACK global de entrega (arquitetura persistente) ----------------------
+// Receber a mensagem em QUALQUER tela já confirma a entrega ao servidor:
+// é o que acende o 2º check cinza do outro lado sem abrir o chat.
+describe("ACK global de entrega", () => {
+  async function montarLogado() {
+    renderProvider();
+    await waitFor(() => expect(socket.handlers.new_message).toBeTruthy());
+    socket.emit.mockClear();
+  }
+
+  it("confirma a entrega ao receber new_message fora do chat", async () => {
+    await montarLogado();
+    clearActiveConversation();
+
+    act(() => socket.fire("new_message", { id: 7, conversation_id: 42, sender_id: "u2" }));
+
+    expect(socket.emit).toHaveBeenCalledWith("message_delivered_ack", { conversation_id: 42 });
+    expect(socket.emit).not.toHaveBeenCalledWith("mark_messages_read", { conversation_id: 42 });
+  });
+
+  it("com a conversa aberta na tela, também marca como lida", async () => {
+    await montarLogado();
+    setActiveConversation(42);
+
+    act(() => socket.fire("new_message", { id: 8, conversation_id: 42, sender_id: "u2" }));
+
+    expect(socket.emit).toHaveBeenCalledWith("message_delivered_ack", { conversation_id: 42 });
+    expect(socket.emit).toHaveBeenCalledWith("mark_messages_read", { conversation_id: 42 });
+  });
+
+  it("mensagem sem conversa não dispara nada", async () => {
+    await montarLogado();
+    act(() => socket.fire("new_message", { id: 9 }));
+    expect(socket.emit).not.toHaveBeenCalled();
   });
 });

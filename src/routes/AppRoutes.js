@@ -1,12 +1,14 @@
-// Navegação privada com bottom tab flutuante em vidro (liquid glass).
-// Mantém todas as rotas: Discovery, Matches, Chat (oculto), Profile,
-// Settings e PhotoVerification (oculta). Só muda o visual da tab bar.
+// Navegação privada com barra inferior fixa (estilo WhatsApp): ícone +
+// rótulo, indicador da aba ativa e borda sutil no topo. Por ser parte do
+// layout (não flutua por cima), nenhuma tela precisa de paddingBottom extra
+// para a barra não cobrir o conteúdo. Acompanha o tema claro/escuro.
 import React from "react";
-import { View, StyleSheet, TouchableOpacity } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTheme, useThemedStyles } from "../contexts/ThemeContext";
+import { selectionTick } from "../utils/haptics";
 
 import Discovery from "../screens/Discovery";
 import SearchPreferences from "../screens/SearchPreferences";
@@ -19,13 +21,13 @@ import PhotoVerification from "../screens/PhotoVerification"; // T023: fluxo de 
 
 const Tab = createBottomTabNavigator();
 
+// [ícone ativo, ícone inativo]
 const ICONS = {
-  Discovery: "flame",
-  Matches: "chatbubbles",
-  Encontros: "heart",
-  Chat: "chatbox-ellipses",
-  Profile: "person-circle",
-  Settings: "settings",
+  Discovery: ["flame", "flame-outline"],
+  Matches: ["chatbubbles", "chatbubbles-outline"],
+  Encontros: ["calendar", "calendar-outline"],
+  Profile: ["person-circle", "person-circle-outline"],
+  Settings: ["settings", "settings-outline"],
 };
 
 // T052 — nome lido pelo leitor de tela (antes era o nome interno da rota,
@@ -38,13 +40,18 @@ export const TAB_LABELS = {
   Settings: "Configurações",
 };
 
-// Só estes 4 aparecem na barra — Chat, SearchPreferences e
-// PhotoVerification continuam registrados (deep-link/navegação interna),
-// mas sem botão.
+// Rótulo VISÍVEL (curto para caber em telas de 320px). O leitor de tela
+// continua lendo o nome completo de TAB_LABELS.
+const SHORT_LABELS = { ...TAB_LABELS, Settings: "Ajustes" };
+
+// Só estas aparecem na barra — Chat, SearchPreferences e PhotoVerification
+// continuam registrados (deep-link/navegação interna), mas sem botão.
 const VISIBLE_TABS = ["Discovery", "Matches", "Encontros", "Profile", "Settings"];
 const FULLSCREEN_ROUTES = ["Chat", "SearchPreferences", "PhotoVerification"];
 
 export function GlassTabBar({ state, navigation }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
   const activeName = state.routes[state.index]?.name;
   if (FULLSCREEN_ROUTES.includes(activeName)) return null;
@@ -52,34 +59,42 @@ export function GlassTabBar({ state, navigation }) {
   const tabs = state.routes.filter((r) => VISIBLE_TABS.includes(r.name));
 
   return (
-    <View style={[styles.barWrap, { bottom: Math.max(insets.bottom, 12) }]} pointerEvents="box-none">
-      <View style={styles.bar}>
-        <BlurView intensity={65} tint="light" style={StyleSheet.absoluteFill} />
-        <View style={styles.barRow}>
-          {tabs.map((route) => {
-            const focused = route.name === activeName;
-            const icon = ICONS[route.name];
-            return (
-              <View key={route.key} style={styles.tabSlot}>
-                <TouchableOpacity
-                  testID={`tab-${route.name}`}
-                  accessibilityRole="tab"
-                  accessibilityLabel={TAB_LABELS[route.name] || route.name}
-                  accessibilityState={{ selected: focused }}
-                  style={[styles.iconWrap, focused && styles.iconActive]}
-                  onPress={() => navigation.navigate(route.name)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name={icon} color="#6D1BC7" size={24} />
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </View>
-      </View>
+    <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+      {tabs.map((route) => {
+        const focused = route.name === activeName;
+        const [iconOn, iconOff] = ICONS[route.name];
+        return (
+          <Pressable
+            key={route.key}
+            testID={`tab-${route.name}`}
+            accessibilityRole="tab"
+            accessibilityLabel={TAB_LABELS[route.name] || route.name}
+            accessibilityState={{ selected: focused }}
+            style={styles.tab}
+            onPress={() => {
+              if (!focused) selectionTick();
+              navigation.navigate(route.name);
+            }}
+          >
+            <View style={[styles.indicator, focused && styles.indicatorActive]}>
+              <Ionicons
+                name={focused ? iconOn : iconOff}
+                size={22}
+                color={focused ? colors.tabActive : colors.tabInactive}
+              />
+            </View>
+            <Text style={[styles.label, focused && styles.labelActive]} numberOfLines={1}>
+              {SHORT_LABELS[route.name]}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
+
+// Nome mais claro para o novo visual (o antigo continua exportado).
+export const TabBar = GlassTabBar;
 
 export default function AppRoutes() {
   return (
@@ -122,51 +137,41 @@ export default function AppRoutes() {
   );
 }
 
-const styles = StyleSheet.create({
-  barWrap: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    alignItems: "center",
-  },
-  bar: {
-    width: "100%",
-    height: 68,
-    borderRadius: 34,
-    overflow: "hidden",
-    backgroundColor: "rgba(244,236,255,0.92)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.9)",
-    shadowColor: "#2A0A55",
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.28,
-    shadowRadius: 26,
-    elevation: 10,
-  },
-  barRow: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 6,
-  },
-  tabSlot: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconActive: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "rgba(109,27,199,0.22)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.85)",
-  },
-});
+const createStyles = (colors) =>
+  StyleSheet.create({
+    bar: {
+      flexDirection: "row",
+      paddingTop: 6,
+      paddingHorizontal: 4,
+      backgroundColor: colors.tabBar,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    tab: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: 52,
+      rowGap: 2,
+    },
+    // Indicador da aba ativa atrás do ícone (padrão atual do WhatsApp/Material).
+    indicator: {
+      width: 56,
+      height: 30,
+      borderRadius: 15,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    indicatorActive: {
+      backgroundColor: colors.primarySoft,
+    },
+    label: {
+      fontSize: 11,
+      fontWeight: "500",
+      color: colors.tabInactive,
+    },
+    labelActive: {
+      color: colors.tabActive,
+      fontWeight: "700",
+    },
+  });

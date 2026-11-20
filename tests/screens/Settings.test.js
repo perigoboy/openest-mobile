@@ -432,3 +432,55 @@ describe('Settings — verificação de foto (T023)', () => {
 });
 
 
+
+// --- Aparência: tema Claro / Escuro / Automático -------------------------
+describe('Settings — tema do app', () => {
+  const asyncStorageModule = require('@react-native-async-storage/async-storage');
+  const AsyncStorage = asyncStorageModule.default || asyncStorageModule;
+  const { ThemeProvider, THEME_STORAGE_KEY } = require('../../src/contexts/ThemeContext');
+  const { lightColors, darkColors } = require('../../src/styles/theme');
+  const { StyleSheet } = require('react-native');
+
+  const fundoDaTela = () => {
+    // O primeiro elemento com fundo é o container raiz da tela.
+    const comFundo = screen.UNSAFE_root.findAll(
+      (n) => typeof n.type === 'string' && StyleSheet.flatten(n.props.style)?.backgroundColor
+    );
+    return StyleSheet.flatten(comFundo[0].props.style).backgroundColor;
+  };
+
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+  });
+
+  it('mostra o seletor com as 3 opções e a atual marcada', async () => {
+    render(
+      <ThemeProvider initialMode="dark">
+        <ToastProvider>
+          <Settings navigation={{ navigate: jest.fn() }} />
+        </ToastProvider>
+      </ThemeProvider>
+    );
+    expect(screen.getByText('APARÊNCIA')).toBeTruthy();
+    expect(screen.getByTestId('theme-option-light')).toBeTruthy();
+    expect(screen.getByTestId('theme-option-system')).toBeTruthy();
+    expect(screen.getByTestId('theme-option-dark').props.accessibilityState.checked).toBe(true);
+  });
+
+  it('escolher "Claro" recolore a tela na hora e salva a escolha', async () => {
+    render(
+      <ThemeProvider initialMode="dark">
+        <ToastProvider>
+          <Settings navigation={{ navigate: jest.fn() }} />
+        </ToastProvider>
+      </ThemeProvider>
+    );
+    expect(fundoDaTela()).toBe(darkColors.background);
+
+    fireEvent.press(screen.getByTestId('theme-option-light'));
+
+    expect(screen.getByTestId('theme-option-light').props.accessibilityState.checked).toBe(true);
+    expect(fundoDaTela()).toBe(lightColors.background);
+    await waitFor(async () => expect(await AsyncStorage.getItem(THEME_STORAGE_KEY)).toBe('light'));
+  });
+});

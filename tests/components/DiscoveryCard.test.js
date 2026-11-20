@@ -4,9 +4,9 @@
 
 import React from "react";
 import { Dimensions } from "react-native";
-import { render, screen } from "@testing-library/react-native";
+import { act, render, screen } from "@testing-library/react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import DiscoveryCard, { CARD_SCREEN_RATIO, resolveSwipe, SWIPE_VELOCITY_THRESHOLD } from "../../src/components/DiscoveryCard";
+import DiscoveryCard, { CARD_SCREEN_RATIO, resolveSwipe, SWIPE_EXIT_DURATION_MS, SWIPE_VELOCITY_THRESHOLD } from "../../src/components/DiscoveryCard";
 
 // Módulos nativos que não rodam no Jest (mesmos mocks dos testes das telas).
 jest.mock("expo-linear-gradient", () => {
@@ -120,7 +120,35 @@ describe("DiscoveryCard — gesto de swipe (T032)", () => {
     expect(screen.getByTestId("discovery-card")).toBeTruthy();
     expect(screen.getByTestId("discovery-stamp-like")).toBeTruthy();
     expect(screen.getByTestId("discovery-stamp-pass")).toBeTruthy();
-    expect(screen.getByText("CURTIR")).toBeTruthy();
+    expect(screen.getByText("CURTI")).toBeTruthy();
+    expect(screen.getByText("PASSAR")).toBeTruthy();
+  });
+});
+
+describe("DiscoveryCard — botões animam a saída (paridade com o web)", () => {
+  it("ref.swipe chama onSwipe só depois da saída e uma única vez", async () => {
+    jest.useFakeTimers();
+    const onSwipe = jest.fn();
+    const ref = React.createRef();
+    render(<DiscoveryCard ref={ref} profile={PROFILE} onSwipe={onSwipe} />);
+
+    act(() => {
+      ref.current.swipe("like");
+      ref.current.swipe("like"); // toque duplo durante a saída é ignorado
+    });
+    expect(onSwipe).not.toHaveBeenCalled();
+
+    act(() => {
+      jest.advanceTimersByTime(SWIPE_EXIT_DURATION_MS);
+    });
+    expect(onSwipe).toHaveBeenCalledTimes(1);
+    expect(onSwipe).toHaveBeenCalledWith("like");
+    jest.useRealTimers();
+  });
+
+  it("selos CURTI e PASSAR", () => {
+    render(<DiscoveryCard profile={PROFILE} onSwipe={jest.fn()} />);
+    expect(screen.getByText("CURTI")).toBeTruthy();
     expect(screen.getByText("PASSAR")).toBeTruthy();
   });
 });

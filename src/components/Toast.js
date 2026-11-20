@@ -1,12 +1,13 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Animated, StyleSheet, Text } from "react-native";
-import { colors, spacing, radius, typography } from "../styles/theme";
+import { darkColors as colors, spacing, radius, typography } from "../styles/theme";
 
 const ToastContext = createContext(null);
 
-// T052 — tons escuros garantem contraste AA com o texto branco.
+// T052 — snackbar escuro nos DOIS modos (padrão Material/WhatsApp): o texto
+// branco mantém contraste AA tanto no tema claro quanto no escuro.
 export const VARIANT_COLORS = {
-  info: colors.surfaceAlt,
+  info: "#2A2533",
   success: colors.successDark,
   error: colors.dangerDark,
 };
@@ -78,11 +79,17 @@ export function useToast() {
 const styles = StyleSheet.create({
   toast: {
     position: "absolute",
-    bottom: 48,
-    left: spacing.lg,
-    right: spacing.lg,
-    padding: spacing.md,
+    bottom: 96, // acima da barra inferior
+    left: spacing.md,
+    right: spacing.md,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 4,
   },
   text: {
     ...typography.body,

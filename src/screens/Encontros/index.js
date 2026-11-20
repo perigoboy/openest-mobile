@@ -1,27 +1,28 @@
-// Encontros — tela de encontros/eventos (espelha a /events do web).
-// Front — redesign com cards ricos: foto (Cloudinary), badge de status, chips
-// de Data/Hora e Local, e ações (Abrir Chat, Google Agenda, Desistir).
+// Encontros — matches e encontros marcados (espelha a /events do web).
+// Cards com foto (Cloudinary), selo de status, data/hora e local, e as ações
+// Abrir chat, Salvar na agenda e Desistir. Acompanha o tema claro/escuro.
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Linking,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "../../components";
 import { cancelEncontro, fetchMatches } from "../../services/match";
 import { onSocketEvent } from "../../services/socket";
-import { colors, radius, spacing, typography } from "../../styles/theme";
+import { useTheme, useThemedStyles } from "../../contexts/ThemeContext";
+import { radius, spacing, typography } from "../../styles/theme";
 
 function StatusBadge({ status }) {
+  const styles = useThemedStyles(createStyles);
   const agendado = status === "Agendado";
   return (
     <View style={[styles.badge, agendado ? styles.badgeConfirmed : styles.badgePending]}>
@@ -32,21 +33,25 @@ function StatusBadge({ status }) {
   );
 }
 
-function Chip({ icon, text }) {
+function Detail({ icon, text }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   if (!text) return null;
   return (
-    <View style={styles.chip}>
-      <Ionicons name={icon} size={13} color={colors.primaryLight} />
-      <Text style={styles.chipText} numberOfLines={1}>{text}</Text>
+    <View style={styles.detail}>
+      <Ionicons name={icon} size={15} color={colors.textSecondary} />
+      <Text style={styles.detailText} numberOfLines={1}>{text}</Text>
     </View>
   );
 }
 
 function EventCard({ item, onOpenChat, onGoogle, onDesistir }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.card} testID={`match-${item.id}`}>
       <View style={styles.cardTop}>
-        <Avatar uri={item.photo || undefined} name={item.name} size={52} />
+        <Avatar uri={item.photo || undefined} name={item.name} size={48} />
         <View style={styles.cardHeading}>
           <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
           {item.titulo && item.titulo !== item.name ? (
@@ -56,55 +61,53 @@ function EventCard({ item, onOpenChat, onGoogle, onDesistir }) {
         <StatusBadge status={item.status} />
       </View>
 
-      <View style={styles.chips}>
-        <Chip icon="time-outline" text={item.dateTime || (item.status === "A combinar" ? "A combinar" : null)} />
-        <Chip icon="location-outline" text={item.local} />
+      <View style={styles.details}>
+        <Detail icon="time-outline" text={item.dateTime || (item.status === "A combinar" ? "A combinar" : null)} />
+        <Detail icon="location-outline" text={item.local} />
       </View>
 
       <View style={styles.actions}>
-        <TouchableOpacity
+        <Pressable
           testID={`match-chat-${item.id}`}
-          style={[styles.actionBtn, styles.chatBtn]}
+          style={({ pressed }) => [styles.actionBtn, styles.chatBtn, pressed && { backgroundColor: colors.primaryPressed }]}
           onPress={() => onOpenChat(item)}
-          activeOpacity={0.85}
           accessibilityRole="button"
           accessibilityLabel={`Abrir conversa com ${item.name}`}
         >
-          <Ionicons name="chatbubble-ellipses" size={16} color={colors.white} />
-          <Text style={styles.chatBtnText}>Abrir Chat</Text>
-        </TouchableOpacity>
+          <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.onPrimary} />
+          <Text style={styles.chatBtnText}>Abrir chat</Text>
+        </Pressable>
 
         {item.googleUrl ? (
-          <TouchableOpacity
+          <Pressable
             testID={`match-google-${item.id}`}
-            style={[styles.actionBtn, styles.googleBtn]}
+            style={({ pressed }) => [styles.actionBtn, styles.outlineBtn, pressed && styles.pressedSoft]}
             onPress={() => onGoogle(item)}
-            activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel="Salvar no Google Agenda"
           >
-            <Ionicons name="calendar" size={16} color={colors.primaryLight} />
-            <Text style={styles.googleBtnText}>Agenda</Text>
-          </TouchableOpacity>
+            <Ionicons name="calendar-outline" size={16} color={colors.accent} />
+            <Text style={styles.outlineBtnText}>Agenda</Text>
+          </Pressable>
         ) : null}
 
-        <TouchableOpacity
+        <Pressable
           testID={`match-desistir-${item.id}`}
-          style={[styles.actionBtn, styles.desistirBtn]}
+          style={({ pressed }) => [styles.actionBtn, styles.ghostBtn, pressed && styles.pressedSoft]}
           onPress={() => onDesistir(item)}
-          activeOpacity={0.85}
           accessibilityRole="button"
           accessibilityLabel={`Desistir do encontro com ${item.name}`}
         >
-          <Ionicons name="close" size={16} color={colors.danger} />
           <Text style={styles.desistirText}>Desistir</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
 }
 
 export default function Encontros({ navigation }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -180,10 +183,10 @@ export default function Encontros({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      <LinearGradient colors={["#2A0A55", "#0D0D0F"]} style={styles.headerBg}>
-        <Text style={styles.title}>Encontros 🔥</Text>
-        <Text style={styles.subtitle}>Seus matches e encontros agendados</Text>
-      </LinearGradient>
+      <View style={styles.header}>
+        <Text style={styles.title} accessibilityRole="header">Encontros</Text>
+        <Text style={styles.subtitle}>Matches e encontros marcados</Text>
+      </View>
 
       {loading ? (
         <View style={styles.loading} testID="encontros-loading">
@@ -203,14 +206,16 @@ export default function Encontros({ navigation }) {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => loadMatches(true)}
-              tintColor={colors.primaryLight}
+              tintColor={colors.accent}
               colors={[colors.primary]}
               accessibilityLabel="Atualizar encontros"
             />
           }
           ListEmptyComponent={
             <View style={styles.emptyState} testID="encontros-empty">
-              <Ionicons name="heart-circle-outline" size={64} color={colors.textMuted} />
+              <View style={styles.emptyBadge}>
+                <Ionicons name="calendar-outline" size={28} color={colors.accent} />
+              </View>
               <Text style={styles.emptyTitle}>Você ainda não tem encontros</Text>
               <Text style={styles.emptySubtitle}>
                 Curtir perfis no Descobrir é o primeiro passo para marcar encontros por aqui.
@@ -223,75 +228,79 @@ export default function Encontros({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  headerBg: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg },
-  title: { ...typography.h1, color: colors.text },
-  subtitle: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  listContent: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    // Espaço para a tab bar flutuante não cobrir os botões do último card.
-    paddingBottom: 180,
-  },
-  emptyListContent: { flexGrow: 1, justifyContent: "center" },
-  emptyState: { alignItems: "center", paddingHorizontal: spacing.xl },
-  emptyTitle: { ...typography.h3, color: colors.text, textAlign: "center", marginTop: spacing.md },
-  emptySubtitle: { ...typography.body, color: colors.textMuted, textAlign: "center", marginTop: spacing.sm },
+const createStyles = (colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    header: {
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.sm,
+    },
+    title: { ...typography.h1, color: colors.textPrimary },
+    subtitle: { ...typography.body, fontSize: 14, color: colors.textSecondary, marginTop: 2 },
+    loading: { flex: 1, alignItems: "center", justifyContent: "center" },
+    // A barra inferior agora faz parte do layout: basta um respiro normal.
+    listContent: { paddingHorizontal: spacing.md, paddingTop: spacing.xs, paddingBottom: spacing.lg },
+    emptyListContent: { flexGrow: 1, justifyContent: "center" },
+    emptyState: { alignItems: "center", paddingHorizontal: spacing.xl },
+    emptyBadge: {
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.primarySoft,
+    },
+    emptyTitle: { ...typography.h3, color: colors.textPrimary, textAlign: "center", marginTop: spacing.md },
+    emptySubtitle: { ...typography.body, color: colors.textSecondary, textAlign: "center", marginTop: spacing.xs },
 
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    shadowColor: "#2A0A55",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  cardTop: { flexDirection: "row", alignItems: "center", columnGap: spacing.sm },
-  cardHeading: { flex: 1 },
-  name: { ...typography.h3, color: colors.text },
-  titulo: { ...typography.caption, color: colors.textMuted, marginTop: 1 },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      padding: spacing.md,
+      marginBottom: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    cardTop: { flexDirection: "row", alignItems: "center", columnGap: 12 },
+    cardHeading: { flex: 1 },
+    name: { ...typography.bodyStrong, fontSize: 16, color: colors.textPrimary },
+    titulo: { ...typography.caption, fontSize: 13, color: colors.textSecondary, marginTop: 2 },
 
-  badge: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.pill, borderWidth: 1 },
-  badgeConfirmed: { backgroundColor: "rgba(46,204,113,0.15)", borderColor: colors.success },
-  badgePending: { backgroundColor: "rgba(142,68,173,0.18)", borderColor: colors.primaryLight },
-  badgeText: { ...typography.caption, fontSize: 11, fontWeight: "700" },
-  badgeTextConfirmed: { color: colors.success },
-  badgeTextPending: { color: colors.primaryLight },
+    badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill },
+    badgeConfirmed: { backgroundColor: colors.successSoft },
+    badgePending: { backgroundColor: colors.primarySoft },
+    badgeText: { fontSize: 12, fontWeight: "600" },
+    badgeTextConfirmed: { color: colors.successText },
+    badgeTextPending: { color: colors.accent },
 
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, marginTop: spacing.md },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: spacing.xs,
-    backgroundColor: colors.surfaceAlt,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
-    borderRadius: radius.sm,
-    maxWidth: "100%",
-  },
-  chipText: { ...typography.caption, color: colors.text },
+    details: { marginTop: 12, rowGap: 6 },
+    detail: { flexDirection: "row", alignItems: "center", columnGap: 8 },
+    detailText: { ...typography.body, fontSize: 14, color: colors.textPrimary, flexShrink: 1 },
 
-  actions: { flexDirection: "row", columnGap: spacing.sm, marginTop: spacing.md },
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: spacing.xs,
-    height: 40,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    justifyContent: "center",
-  },
-  chatBtn: { flex: 1, backgroundColor: colors.primary },
-  chatBtnText: { ...typography.caption, fontWeight: "700", color: colors.white },
-  googleBtn: { borderWidth: 1, borderColor: colors.primaryLight, backgroundColor: "transparent" },
-  googleBtnText: { ...typography.caption, fontWeight: "700", color: colors.primaryLight },
-  desistirBtn: { borderWidth: 1, borderColor: colors.danger, backgroundColor: "transparent" },
-  desistirText: { ...typography.caption, fontWeight: "700", color: colors.danger },
-});
+    actions: {
+      flexDirection: "row",
+      alignItems: "center",
+      columnGap: spacing.sm,
+      marginTop: 14,
+      paddingTop: 12,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.divider,
+    },
+    actionBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      columnGap: 6,
+      height: 38,
+      paddingHorizontal: 14,
+      borderRadius: radius.pill,
+    },
+    chatBtn: { flex: 1, backgroundColor: colors.primary },
+    chatBtnText: { ...typography.label, color: colors.onPrimary },
+    outlineBtn: { borderWidth: 1, borderColor: colors.border },
+    outlineBtnText: { ...typography.label, color: colors.accent },
+    ghostBtn: { paddingHorizontal: 10 },
+    desistirText: { ...typography.label, color: colors.dangerText },
+    pressedSoft: { backgroundColor: colors.surfaceMuted },
+  });

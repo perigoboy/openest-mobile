@@ -55,6 +55,7 @@ const retryMessage = jest.fn();
 const deleteForEveryone = jest.fn();
 const hideForMe = jest.fn();
 const reload = jest.fn();
+const openViewOnce = jest.fn();
 
 function mockChatState(overrides = {}) {
   useChat.mockReturnValue({
@@ -72,6 +73,7 @@ function mockChatState(overrides = {}) {
     deleteForEveryone,
     hideForMe,
     reload,
+    openViewOnce,
     ...overrides,
   });
 }
@@ -176,7 +178,10 @@ describe("Chat — renderização", () => {
     renderChat();
 
     expect(screen.queryByText("https://res.cloudinary.com/x/foto.jpg")).toBeNull();
-    expect(screen.UNSAFE_getByType(Image).props.source.uri).toBe("https://res.cloudinary.com/x/foto.jpg");
+    // (o fundo com textura do chat também é uma Image; busca a da mensagem)
+    expect(screen.getByLabelText("Imagem enviada na conversa").props.source.uri).toBe(
+      "https://res.cloudinary.com/x/foto.jpg"
+    );
   });
 
   it("mostra o status das minhas mensagens (enviando / enviada)", () => {
@@ -321,7 +326,9 @@ describe("Chat — navegação e contato", () => {
     blockUser.mockResolvedValue({});
     renderChat();
 
+    // ⋮ abre a gaveta do contato; "Bloquear" pede confirmação nativa.
     fireEvent.press(screen.getByTestId("chat-options-button"));
+    fireEvent.press(screen.getByTestId("contact-action-block"));
     const [, , buttons] = Alert.alert.mock.calls.at(-1);
     await act(async () => {
       await buttons.find((b) => b.text === "Bloquear").onPress();
@@ -379,9 +386,12 @@ describe("Chat — menu de anexos (+)", () => {
   it("abre o menu de anexos ao tocar no +", () => {
     renderChat();
     fireEvent.press(screen.getByTestId("chat-attach-button"));
-    expect(screen.getByTestId("attachment-photo")).toBeTruthy();
+    // Câmera e galeria aparecem como opções explícitas, como no WhatsApp.
+    expect(screen.getByTestId("attachment-camera")).toBeTruthy();
+    expect(screen.getByTestId("attachment-gallery")).toBeTruthy();
     expect(screen.getByTestId("attachment-location")).toBeTruthy();
     expect(screen.getByTestId("attachment-gif")).toBeTruthy();
+    expect(screen.getByTestId("attachment-schedule")).toBeTruthy();
   });
 
   it("selecionar GIF abre o seletor de GIFs", async () => {
@@ -406,45 +416,108 @@ describe("Chat — menu de anexos (+)", () => {
     expect(reply).toBeNull();
   });
 
-  it("foto: escolher da galeria envia a imagem", async () => {
+  it("galeria: abre a PRÉ-VISUALIZAÇÃO antes de enviar", async () => {
     renderChat();
     fireEvent.press(screen.getByTestId("chat-attach-button"));
-    fireEvent.press(screen.getByTestId("attachment-photo"));
-    // Alert "Enviar foto" → "Escolher da galeria"
-    const [, , buttons] = Alert.alert.mock.calls.at(-1);
-    await act(async () => {
-      await buttons.find((b) => b.text === "Escolher da galeria").onPress();
+    fireEvent.press(screen.getByTestId("attachment-gallery"));
+
+    // Espera a gaveta fechar e a galeria devolver a foto.
+    await waitFor(() => expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalled());
+    expect(await screen.findByTestId("image-preview")).toBeTruthy();
+    expect(sendImage).not.toHaveBeenCalled(); // nada sai sem confirmar
+
+    fireEvent.changeText(screen.getByTestId("image-preview-caption"), "olha a vista");
+    fireEvent.press(screen.getByTestId("image-preview-send"));
+
+    expect(sendImage).toHaveBeenCalledWith(
+      { uri: "file:///a.jpg" },
+      { caption: "olha a vista", viewOnce: false }
+    );
+  });
+
+  it("câmera: tira a foto, pré-visualiza e envia como VISUALIZAÇÃO ÚNICA", async () => {
+    ImagePicker.launchCameraAsync.mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: "file:///camera.jpg" }],
     });
-    expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalled();
-    expect(sendImage).toHaveBeenCalledWith({ uri: "file:///a.jpg" });
+    renderChat();
+
+    // Atalho da câmera direto na barra de digitação.
+    fireEvent.press(screen.getByTestId("chat-camera-button"));
+
+    await waitFor(() => expect(ImagePicker.requestCameraPermissionsAsync).toHaveBeenCalled());
+    await waitFor(() => expect(ImagePicker.launchCameraAsync).toHaveBeenCalled());
+    expect(await screen.findByTestId("image-preview")).toBeTruthy();
+
+    const toggle = screen.getByTestId("image-preview-view-once");
+    expect(toggle.props.accessibilityState.checked).toBe(false);
+    fireEvent.press(toggle);
+    expect(screen.getByTestId("image-preview-view-once").props.accessibilityState.checked).toBe(true);
+    expect(screen.getByTestId("image-preview-view-once-hint")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("image-preview-send"));
+    expect(sendImage).toHaveBeenCalledWith({ uri: "file:///camera.jpg" }, { caption: "", viewOnce: true });
+  });
+
+  it("cancelar na pré-visualização não envia nada", async () => {
+    renderChat();
+    fireEvent.press(screen.getByTestId("chat-attach-button"));
+    fireEvent.press(screen.getByTestId("attachment-gallery"));
+    expect(await screen.findByTestId("image-preview")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("image-preview-close"));
+    expect(sendImage).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("image-preview")).toBeNull();
+  });
+
+  it("câmera sem permissão avisa e não abre nada", async () => {
+    ImagePicker.requestCameraPermissionsAsync.mockResolvedValueOnce({ status: "denied" });
+    renderChat();
+    fireEvent.press(screen.getByTestId("chat-camera-button"));
+
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledWith("Permissão necessária", expect.any(String)));
+    expect(ImagePicker.launchCameraAsync).not.toHaveBeenCalled();
   });
 });
 
 describe("Chat — ações da mensagem (long press)", () => {
   const Clipboard = require("expo-clipboard");
 
+  // Segurar a mensagem abre a gaveta de ações (bottom sheet), não um Alert.
   function longPress(id) {
     fireEvent(screen.getByTestId(`chat-message-touch-${id}`), "longPress");
-    return Alert.alert.mock.calls.at(-1)[2]; // os botões
   }
+  const acoesVisiveis = () =>
+    ["reply", "copy", "delete-me", "delete-all"].filter((k) => screen.queryByTestId(`message-action-${k}`));
 
-  it("mensagem recebida: Responder, Copiar e Apagar p/ mim (sem Apagar p/ todos)", () => {
+  it("mensagem recebida: Responder, Copiar e Apagar para mim (sem Apagar para todos)", () => {
     renderChat();
-    const buttons = longPress("4"); // msg do outro
-    const texts = buttons.map((b) => b.text);
-    expect(texts).toEqual(["↩️ Responder", "📋 Copiar", "🗑️ Apagar p/ mim", "Cancelar"]);
+    longPress("4"); // msg do outro
+    expect(acoesVisiveis()).toEqual(["reply", "copy", "delete-me"]);
+    expect(screen.getByText("Apagar para mim")).toBeTruthy();
+    expect(Alert.alert).not.toHaveBeenCalled();
   });
 
-  it("minha mensagem inclui Apagar p/ todos", () => {
+  it("minha mensagem inclui Apagar para todos", () => {
     renderChat();
-    const texts = longPress("3").map((b) => b.text); // msg minha
-    expect(texts).toContain("🗑️ Apagar p/ todos");
+    longPress("3"); // msg minha
+    expect(acoesVisiveis()).toContain("delete-all");
+    expect(screen.getByText("Apagar para todos")).toBeTruthy();
+  });
+
+  it("os rótulos usam ícones vetoriais, sem emojis", () => {
+    renderChat();
+    longPress("3");
+    ["Responder", "Copiar", "Apagar para mim", "Apagar para todos"].forEach((label) => {
+      expect(screen.getByText(label)).toBeTruthy();
+    });
+    expect(screen.queryByText(/↩️|📋|🗑️/)).toBeNull();
   });
 
   it("Responder abre a barra de citação acima do campo", () => {
     renderChat();
-    const buttons = longPress("4");
-    act(() => buttons.find((b) => b.text === "↩️ Responder").onPress());
+    longPress("4");
+    fireEvent.press(screen.getByTestId("message-action-reply"));
     expect(screen.getByTestId("chat-reply-banner")).toBeTruthy();
     // cancelar a resposta fecha a barra
     fireEvent.press(screen.getByTestId("chat-reply-cancel"));
@@ -453,24 +526,24 @@ describe("Chat — ações da mensagem (long press)", () => {
 
   it("Copiar usa a área de transferência", async () => {
     renderChat();
-    const buttons = longPress("4");
+    longPress("4");
     await act(async () => {
-      await buttons.find((b) => b.text === "📋 Copiar").onPress();
+      fireEvent.press(screen.getByTestId("message-action-copy"));
     });
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith("Também gostei! 😊");
   });
 
-  it("Apagar p/ mim chama hideForMe", () => {
+  it("Apagar para mim chama hideForMe", () => {
     renderChat();
-    const buttons = longPress("4");
-    act(() => buttons.find((b) => b.text === "🗑️ Apagar p/ mim").onPress());
+    longPress("4");
+    fireEvent.press(screen.getByTestId("message-action-delete-me"));
     expect(hideForMe).toHaveBeenCalledWith(expect.objectContaining({ id: "4" }));
   });
 
-  it("Apagar p/ todos chama deleteForEveryone", () => {
+  it("Apagar para todos chama deleteForEveryone", () => {
     renderChat();
-    const buttons = longPress("3");
-    act(() => buttons.find((b) => b.text === "🗑️ Apagar p/ todos").onPress());
+    longPress("3");
+    fireEvent.press(screen.getByTestId("message-action-delete-all"));
     expect(deleteForEveryone).toHaveBeenCalledWith(expect.objectContaining({ id: "3" }));
   });
 });
@@ -575,5 +648,178 @@ describe("Chat — checks de status", () => {
     await waitFor(() => expect(screen.getByText("oi")).toBeTruthy());
     expect(screen.queryByTestId("tick-read")).toBeNull();
     expect(screen.queryByTestId("tick-sent")).toBeNull();
+  });
+});
+
+
+// --- Foto de visualização única -------------------------------------------
+describe("Chat — foto de visualização única", () => {
+  const recebida = (extra = {}) => ({
+    id: "vo1", text: "", time: "20:00", isMine: false, isImage: false,
+    isViewOnce: true, viewOnceOpened: false, status: "sent", ...extra,
+  });
+
+  it("NÃO mostra miniatura: só o card 'Foto' com o ícone 1", () => {
+    mockChatState({ messages: [recebida()] });
+    renderChat();
+    expect(screen.getByTestId("view-once-vo1")).toBeTruthy();
+    expect(screen.getByText("Foto")).toBeTruthy();
+    expect(screen.getByTestId("view-once-closed-icon")).toBeTruthy();
+    expect(screen.queryByLabelText("Imagem enviada na conversa")).toBeNull();
+  });
+
+  it("tocar abre o visualizador seguro com a foto entregue pela API", async () => {
+    openViewOnce.mockResolvedValueOnce({ url: "https://res.cloudinary.com/x/unica.jpg", caption: "segredo" });
+    mockChatState({ messages: [recebida()] });
+    renderChat();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("view-once-vo1"));
+    });
+
+    expect(openViewOnce).toHaveBeenCalledWith(expect.objectContaining({ id: "vo1" }));
+    expect(screen.getByTestId("view-once-viewer")).toBeTruthy();
+    expect(screen.getByTestId("view-once-viewer-image").props.source.uri).toBe(
+      "https://res.cloudinary.com/x/unica.jpg"
+    );
+    expect(screen.getByText("segredo")).toBeTruthy();
+
+    // Bloqueia print de tela enquanto a foto está aberta.
+    expect(require("expo-screen-capture").usePreventScreenCapture).toHaveBeenCalled();
+
+    fireEvent.press(screen.getByTestId("view-once-viewer-close"));
+    expect(screen.queryByTestId("view-once-viewer")).toBeNull();
+  });
+
+  it("já aberta: mostra 'Aberta' e o toque fica desativado", () => {
+    mockChatState({ messages: [recebida({ viewOnceOpened: true })] });
+    renderChat();
+    expect(screen.getByText("Aberta")).toBeTruthy();
+    expect(screen.getByTestId("view-once-opened-icon")).toBeTruthy();
+    expect(screen.getByTestId("view-once-vo1").props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByTestId("view-once-vo1"));
+    expect(openViewOnce).not.toHaveBeenCalled();
+  });
+
+  it("segunda tentativa recusada pela API avisa e não abre", async () => {
+    const err = new Error("Esta foto já foi aberta.");
+    err.code = "already_opened";
+    openViewOnce.mockRejectedValueOnce(err);
+    mockChatState({ messages: [recebida()] });
+    renderChat();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("view-once-vo1"));
+    });
+    expect(screen.queryByTestId("view-once-viewer")).toBeNull();
+    expect(await screen.findByText("Esta foto já foi aberta.")).toBeTruthy();
+  });
+
+  it("quem enviou vê 'Foto' com os ticks e não consegue abrir", () => {
+    mockChatState({
+      messages: [recebida({ id: "vo2", isMine: true, status: "read" })],
+    });
+    renderChat();
+    expect(screen.getByText("Foto")).toBeTruthy();
+    expect(screen.getByTestId("tick-read")).toBeTruthy();
+    expect(screen.getByTestId("view-once-vo2").props.accessibilityState.disabled).toBe(true);
+  });
+
+  it("para quem enviou, vira 'Aberta' quando o outro abre", () => {
+    mockChatState({ messages: [recebida({ id: "vo3", isMine: true, viewOnceOpened: true, status: "read" })] });
+    renderChat();
+    expect(screen.getByText("Aberta")).toBeTruthy();
+  });
+});
+
+describe("Chat — resposta com citação (reply_to)", () => {
+  const ORIGINAL = { id: "4", text: "Bora no sábado?", time: "14:32", isMine: false, isImage: false, status: "sent" };
+  const RESPOSTA = {
+    id: "5", text: "Sábado sim!", time: "14:33", isMine: true, isImage: false, status: "read",
+    replyTo: { id: "4", senderId: "u2", sender: "Ana Lima", isMine: false, type: "text", content: "Bora no sábado?" },
+  };
+
+  it("o balão enviado mostra a citação com autor e texto", () => {
+    mockChatState({ messages: [RESPOSTA, ORIGINAL] });
+    renderChat();
+    const quote = screen.getByTestId("chat-reply-quote");
+    expect(quote).toBeTruthy();
+    expect(screen.getAllByText("Ana Lima").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Bora no sábado?").length).toBe(2); // original + citação
+  });
+
+  it("tocar na citação rola até a mensagem original", () => {
+    mockChatState({ messages: [RESPOSTA, ORIGINAL] });
+    const scrollSpy = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => {});
+    renderChat();
+    fireEvent.press(screen.getByTestId("chat-reply-quote"));
+    expect(scrollSpy).toHaveBeenCalledWith(expect.objectContaining({ index: 1, animated: true }));
+    scrollSpy.mockRestore();
+  });
+
+  it("citação de foto mostra o rótulo, nunca a URL", () => {
+    mockChatState({
+      messages: [{
+        ...RESPOSTA,
+        replyTo: { id: "9", senderId: "u2", sender: "Ana Lima", isMine: false, type: "image", content: "Foto" },
+      }],
+    });
+    renderChat();
+    expect(screen.getByText("Foto")).toBeTruthy();
+  });
+
+  it("Responder mostra autor e prévia na barra e envia a citação com o nome do contato", () => {
+    mockChatState({ messages: [ORIGINAL] });
+    renderChat();
+    fireEvent(screen.getByTestId("chat-message-touch-4"), "longPress");
+    fireEvent.press(screen.getByTestId("message-action-reply"));
+    const banner = screen.getByTestId("chat-reply-banner");
+    expect(banner).toBeTruthy();
+    fireEvent.changeText(screen.getByTestId("chat-message-input"), "Sábado sim!");
+    fireEvent.press(screen.getByTestId("chat-send-button"));
+    expect(sendMessage).toHaveBeenCalledWith(
+      "Sábado sim!",
+      expect.objectContaining({ id: "4", sender: "Ana Lima", type: "text", content: "Bora no sábado?" })
+    );
+    expect(screen.queryByTestId("chat-reply-banner")).toBeNull();
+  });
+});
+
+describe("Chat — card Encontro marcado", () => {
+  it("convite aceito vira o card com data, local e atalho para Encontros", () => {
+    mockChatState({
+      messages: [{
+        id: "7", text: "[ENCONTRO_MARCADO]{}", time: "10:05", isMine: false, isImage: false, status: "read",
+        inviteStatus: "accepted",
+        meeting: { titulo: "Café", local: "Dragão do Mar", scheduled_at: "2026-11-22T19:00:00.000Z" },
+      }],
+    });
+    const { navigation } = renderChat();
+    expect(screen.getByTestId("meeting-card")).toBeTruthy();
+    expect(screen.getByText("Encontro marcado")).toBeTruthy();
+    expect(screen.getByText("Café")).toBeTruthy();
+    expect(screen.getByText("Dragão do Mar")).toBeTruthy();
+    expect(screen.queryByText("✅ Convite Aceite!")).toBeNull();
+
+    fireEvent.press(screen.getByTestId("meeting-card-open"));
+    expect(navigation.navigate).toHaveBeenCalledWith("Encontros", { focusDate: "2026-11-22T19:00:00.000Z" });
+  });
+
+  it("aceite antigo sem detalhes também mostra o card", () => {
+    mockChatState({
+      messages: [{ id: "8", text: "✅ Convite Aceite!", time: "10:05", isMine: true, isImage: false, status: "read", inviteStatus: "accepted", meeting: {} }],
+    });
+    const { navigation } = renderChat();
+    expect(screen.getByText("Encontro marcado")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("meeting-card-open"));
+    expect(navigation.navigate).toHaveBeenCalledWith("Encontros", undefined);
+  });
+
+  it("convite recusado mostra o aviso sem emoji", () => {
+    mockChatState({
+      messages: [{ id: "9", text: "❌ Convite Recusado", time: "10:05", isMine: false, isImage: false, status: "read", inviteStatus: "rejected", meeting: null }],
+    });
+    renderChat();
+    expect(screen.getByText("Convite recusado")).toBeTruthy();
   });
 });

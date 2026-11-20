@@ -3,8 +3,10 @@
 // reordenar (setas) e definir a foto principal (posição 0 da lista).
 import React from "react";
 import { View, Text, Image, TouchableOpacity, StyleSheet } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { MAX_PROFILE_PHOTOS } from "../services/profilePhotos";
-import { colors, spacing } from "../styles/theme";
+import { spacing } from "../styles/theme";
+import { useTheme, useThemedStyles } from "../contexts/ThemeContext";
 
 export default function PhotoGallery({
   photos = [],
@@ -14,6 +16,8 @@ export default function PhotoGallery({
   onSetMain,
   disabled = false,
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const mainPhoto = photos[0];
 
   return (
@@ -26,7 +30,8 @@ export default function PhotoGallery({
 
             {isMain && (
               <View style={styles.mainBadge} testID={`photo-main-badge-${index}`}>
-                <Text style={styles.mainBadgeText}>★ Principal</Text>
+                <Ionicons name="star" size={9} color={colors.onPrimary} />
+                <Text style={styles.mainBadgeText}>Principal</Text>
               </View>
             )}
 
@@ -38,7 +43,7 @@ export default function PhotoGallery({
               disabled={disabled}
               accessibilityLabel={`Remover foto ${index + 1}`}
             >
-              <Text style={styles.removeBadgeText}>✕</Text>
+              <Ionicons name="close" size={14} color="#FFFFFF" />
             </TouchableOpacity>
 
             <View style={styles.tileActions}>
@@ -50,7 +55,7 @@ export default function PhotoGallery({
                 disabled={disabled || index === 0}
                 accessibilityLabel={`Mover foto ${index + 1} para a esquerda`}
               >
-                <Text style={styles.actionText}>←</Text>
+                <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -61,7 +66,7 @@ export default function PhotoGallery({
                 disabled={disabled || index === 0}
                 accessibilityLabel={`Definir foto ${index + 1} como principal`}
               >
-                <Text style={styles.actionText}>★</Text>
+                <Ionicons name="star-outline" size={16} color={colors.accent} />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -75,7 +80,7 @@ export default function PhotoGallery({
                 disabled={disabled || index === photos.length - 1}
                 accessibilityLabel={`Mover foto ${index + 1} para a direita`}
               >
-                <Text style={styles.actionText}>→</Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
           </View>
@@ -92,7 +97,7 @@ export default function PhotoGallery({
           disabled={disabled}
           accessibilityLabel="Adicionar foto ao perfil"
         >
-          <Text style={styles.addIcon}>＋</Text>
+          <Ionicons name="add" size={26} color={colors.accent} style={styles.addIcon} />
           <Text style={styles.addText}>Adicionar</Text>
           <Text style={styles.addCount}>
             {photos.length}/{MAX_PROFILE_PHOTOS}
@@ -103,7 +108,8 @@ export default function PhotoGallery({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) =>
+  StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -116,9 +122,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: "hidden",
     margin: spacing.xs,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
-    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     position: "relative",
   },
   image: {
@@ -129,15 +135,18 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 4,
     left: 4,
-    backgroundColor: "#7b2cbf",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 3,
+    backgroundColor: colors.primary,
     borderRadius: 8,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
   mainBadgeText: {
-    color: "#fff",
-    fontSize: 9,
-    fontWeight: "bold",
+    color: colors.onPrimary,
+    fontSize: 10,
+    fontWeight: "700",
   },
   removeBadge: {
     position: "absolute",
@@ -161,7 +170,9 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: "center",
     paddingHorizontal: 4,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: colors.surface,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
   },
   actionButton: {
     width: 28,
@@ -182,27 +193,25 @@ const styles = StyleSheet.create({
     width: 104,
     height: 140,
     borderRadius: 14,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.4)",
+    borderWidth: 1.5,
+    borderColor: colors.border,
     borderStyle: "dashed",
     justifyContent: "center",
     alignItems: "center",
     margin: spacing.xs,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: colors.surfaceMuted,
   },
   addIcon: {
-    fontSize: 24,
-    color: "#fff",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   addText: {
-    fontSize: 11,
-    color: "#fff",
+    fontSize: 12,
+    color: colors.textPrimary,
     fontWeight: "600",
   },
   addCount: {
-    fontSize: 10,
-    color: colors.textMuted || "#dcdde1",
+    fontSize: 11,
+    color: colors.textSecondary,
     marginTop: 2,
   },
 });

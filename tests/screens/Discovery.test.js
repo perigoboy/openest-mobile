@@ -10,7 +10,7 @@ import { fetchMyProfile } from "../../src/services/profile";
 import { Image } from "react-native";
 import { MOCK_PROFILES } from '../../src/screens/Discovery/mockProfiles';
 import { fetchCompatibleProfiles } from '../../src/services/discovery';
-import { likeProfile } from '../../src/services/interactions';
+import { likeProfile, passProfile } from '../../src/services/interactions';
 import { submitReport } from '../../src/services/moderation';
 import { DiscoveryCard } from '../../src/components';
 
@@ -53,7 +53,12 @@ jest.mock('../../src/services/profile', () => ({
 
 jest.mock('../../src/services/interactions', () => ({
   likeProfile: jest.fn(),
+  passProfile: jest.fn().mockResolvedValue({}),
 }));
+
+// Os botões ♥ / X animam o cartão para fora antes de trocar de perfil:
+// espera a saída (SWIPE_EXIT_DURATION_MS) terminar.
+const finishSwipe = () => act(() => new Promise((resolve) => setTimeout(resolve, 400)));
 
 jest.mock('../../src/components', () => {
   const ReactActual = require('react');
@@ -131,14 +136,19 @@ describe('Discovery — redesign liquid glass', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('btn-like'));
     });
+    await finishSwipe();
     expect(screen.getByTestId('discovery-name').props.children.join('')).toContain('Juliana Ferraz');
     expect(likeProfile).toHaveBeenCalledWith(MOCK_PROFILES[0].id);
 
     fireEvent.press(screen.getByTestId('btn-pass'));
+    await finishSwipe();
+    // Passar fica registrado na API (como no web).
+    expect(passProfile).toHaveBeenCalledWith(MOCK_PROFILES[1].id);
     fireEvent.press(screen.getByTestId('btn-superlike'));
     await act(async () => {
       fireEvent.press(screen.getByTestId('btn-like'));
     });
+    await finishSwipe();
     expect(screen.getByTestId('btn-restart')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('btn-restart'));
@@ -152,6 +162,7 @@ describe('Discovery — redesign liquid glass', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('btn-like'));
     });
+    await finishSwipe();
 
     expect(screen.getByText("It's a Match!")).toBeTruthy();
     expect(screen.getByTestId('match-modal-user-photo').props.source.uri).toContain('ui-avatars.com');
@@ -172,6 +183,7 @@ describe('Discovery — redesign liquid glass', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('btn-like'));
     });
+    await finishSwipe();
 
     expect(Alert.alert).toHaveBeenCalledWith(
       'Não foi possível curtir',

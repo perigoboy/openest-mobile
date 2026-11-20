@@ -13,6 +13,26 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 // -------------------------------------------------------------
+// 2. AsyncStorage (preferência de tema) e Haptics (feedback tátil)
+// -------------------------------------------------------------
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock')
+);
+jest.mock('expo-haptics', () => ({
+  impactAsync: jest.fn(() => Promise.resolve()),
+  selectionAsync: jest.fn(() => Promise.resolve()),
+  notificationAsync: jest.fn(() => Promise.resolve()),
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
+  NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
+}));
+
+jest.mock('expo-screen-capture', () => ({
+  usePreventScreenCapture: jest.fn(),
+  preventScreenCaptureAsync: jest.fn(() => Promise.resolve()),
+  allowScreenCaptureAsync: jest.fn(() => Promise.resolve()),
+}));
+
+// -------------------------------------------------------------
 // 3. Alert do React Native
 // -------------------------------------------------------------
 // Espionamos o Alert.alert para verificar se foi chamado com

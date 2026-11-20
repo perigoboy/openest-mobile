@@ -1,4 +1,5 @@
-// Discovery — redesign liquid glass + integração do Discovery Engine (T030):
+// Discovery — integração do Discovery Engine (T030), no visual do tema
+// claro/escuro (sem o fundo em degradê nem os botões de vidro):
 // o baralho vem de GET /api/users/buscar (serviço src/services/discovery.js),
 // que já respeita os filtros do backend e exclui perfis já interagidos.
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -13,22 +14,24 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar, DiscoveryCard, Loader } from "../../components";
 import { useAuth } from "../../contexts/AuthContext";
 import { DEFAULT_PREFERENCES, loadPreferences } from "../../services/searchPreferences";
 import { avatarFallback, fetchCompatibleProfiles } from "../../services/discovery";
-import { likeProfile } from "../../services/interactions";
+import { likeProfile, passProfile } from "../../services/interactions";
+import { CARD_SCREEN_RATIO } from "../../components/DiscoveryCard";
 import { distanceKm } from "../../services/userLocation";
 import { fetchMyProfile } from "../../services/profile";
 import { resolveMediaUrl } from "../../utils/mediaUrl";
 import { REPORT_REASONS, submitReport } from "../../services/moderation";
 import { blockUser } from "../../services/block";
-import { colors, radius, spacing, typography } from "../../styles/theme";
+import { useTheme, useThemedStyles } from "../../contexts/ThemeContext";
+import { radius, spacing, typography } from "../../styles/theme";
+import { tapLight, tapMedium } from "../../utils/haptics";
 
 function distanceToKm(profile, userLocation) {
   if (profile?.latitude != null && profile?.longitude != null && userLocation) {
@@ -66,6 +69,8 @@ function shortFilterLabel(prefs) {
 }
 
 export default function Discovery({ navigation }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { user, updateUser } = useAuth();
   const [index, setIndex] = useState(0);
   const [prefs, setPrefs] = useState(DEFAULT_PREFERENCES);
@@ -81,6 +86,9 @@ export default function Discovery({ navigation }) {
   const [liking, setLiking] = useState(false);
   const [matchProfile, setMatchProfile] = useState(null);
   const isLiking = useRef(false);
+  // Cartão atual: os botões ♥ / X disparam a mesma saída animada do gesto.
+  const cardRef = useRef(null);
+  const { height: windowHeight } = useWindowDimensions();
   const userPhoto = Array.isArray(user?.photos)
     ? user.photos.find((photo) => typeof photo === "string" && photo.startsWith("http"))
     : null;
@@ -92,6 +100,7 @@ export default function Discovery({ navigation }) {
     (item) => !hiddenProfileIds.current.has(item.id)
   );
   const profile = visibleDeck[index] || null;
+  const nextProfile = visibleDeck[index + 1] || null;
 
   // Busca os perfis compatíveis na API e reseta o baralho para o 1º card.
   const loadProfiles = useCallback(async (currentPrefs) => {
@@ -194,13 +203,27 @@ export default function Discovery({ navigation }) {
     }
   }, [profile]);
 
+  // Chamado quando o cartão JÁ saiu da tela (gesto ou botões).
   function handleCardSwipe(direction) {
     if (isLiking.current) return;
     if (direction === "like") {
       return handleLike();
-    } else {
-      next();
     }
+    // Passar fica registrado na API (como no web) e o perfil não volta.
+    if (profile && typeof passProfile === "function") {
+      Promise.resolve(passProfile(profile.id)).catch((error) =>
+        console.error("Erro ao passar perfil:", error?.response?.status, error?.response?.data || error?.message)
+      );
+    }
+    next();
+  }
+
+  // Botões: animam o cartão para o lado antes de trocar de perfil. Sem o
+  // cartão montado (ex.: carregando), cai direto na ação.
+  function swipeWithButton(direction) {
+    if (isLiking.current || !profile) return;
+    if (cardRef.current?.swipe) cardRef.current.swipe(direction);
+    else handleCardSwipe(direction);
   }
 
   function dismissMatch() {
@@ -286,7 +309,7 @@ export default function Discovery({ navigation }) {
   }
 
   return (
-    <LinearGradient colors={["#3D0A7A", "#8B3BD6", "#E3BFFF", "#F9F1FF"]} locations={[0, 0.4, 0.75, 1]} style={styles.bg}>
+    <View style={styles.bg}>
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
         <View style={styles.topBar}>
           <TouchableOpacity
@@ -297,7 +320,7 @@ export default function Discovery({ navigation }) {
             accessibilityRole="button"
             accessibilityLabel="Abrir configurações"
           >
-            <Avatar uri={myAvatarUri} name={user?.name} size={40} />
+            <Avatar uri={myAvatarUri} name={user?.name} size={38} />
           </TouchableOpacity>
           <View style={styles.brandCenter} pointerEvents="none">
             <Image testID="discovery-brand" source={require("../../../assets/logo-chama.png")} style={styles.brandLogo} resizeMode="contain" />
@@ -305,44 +328,60 @@ export default function Discovery({ navigation }) {
           <View style={styles.topRight}>
             <TouchableOpacity
               testID="btn-encontros"
+              style={styles.iconButton}
               onPress={() => navigation?.navigate?.("Encontros")}
               activeOpacity={0.8}
               accessibilityRole="button"
               accessibilityLabel="Abrir meus encontros"
             >
-              <BlurView intensity={55} tint="dark" style={styles.pillIcon}>
-                <Ionicons name="calendar" size={18} color="#fff" />
-              </BlurView>
+              <Ionicons name="calendar-outline" size={19} color={colors.textPrimary} />
             </TouchableOpacity>
-            <TouchableOpacity testID="btn-filters" onPress={openFilters} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Abrir filtros de busca">
-              <BlurView intensity={55} tint="dark" style={styles.pill}>
-                <Ionicons name="options" size={16} color="#fff" />
-                <Text style={styles.pillText} numberOfLines={1}>{shortFilterLabel(prefs)}</Text>
-              </BlurView>
+            <TouchableOpacity
+              testID="btn-filters"
+              style={styles.pill}
+              onPress={openFilters}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir filtros de busca"
+            >
+              <Ionicons name="options-outline" size={16} color={colors.textPrimary} />
+              <Text style={styles.pillText} numberOfLines={1}>{shortFilterLabel(prefs)}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.cardArea}>
           {loading ? (
-            // T030: loader inline enquanto a API responde (a T031 evolui para
-            // skeleton + estado vazio com recarregar).
+            // T030: loader inline enquanto a API responde.
             <Loader />
           ) : profile ? (
+            <View style={[styles.deckStack, { maxHeight: Math.round(windowHeight * CARD_SCREEN_RATIO) }]}>
+              {/* Próximo perfil espiando atrás: quando o cartão sai, ele já está ali. */}
+              {nextProfile?.photo ? (
+                <View style={styles.peek} pointerEvents="none" testID="discovery-next-peek">
+                  <Image source={{ uri: nextProfile.photo }} style={styles.peekImage} resizeMode="cover" />
+                </View>
+              ) : null}
             <DiscoveryCard
+              key={profile.id}
+              ref={cardRef}
               profile={profile}
               onSwipe={handleCardSwipe}
               onReportPress={() => openReportModal(profile)}
               onBlockPress={() => handleBlockUser(profile)}
             />
+            </View>
           ) : (
-            <BlurView intensity={40} tint="light" style={styles.empty}>
+            <View style={styles.empty}>
+              <View style={styles.emptyBadge}>
+                <Ionicons name={deck.length === 0 ? "options-outline" : "sparkles-outline"} size={26} color={colors.accent} />
+              </View>
               <Text style={styles.emptyTitle}>
                 {deck.length === 0 ? "Nenhum perfil nos filtros atuais" : "Você viu todo mundo"}
               </Text>
               <Text style={styles.emptySubtitle}>
                 {deck.length === 0
-                  ? "Ajuste a distÃ¢ncia, a idade ou o grupo para ver mais pessoas."
+                  ? "Ajuste a distância, a idade ou o grupo para ver mais pessoas."
                   : "Volte aos filtros para ampliar a busca."}
               </Text>
               {deck.length === 0 ? (
@@ -354,25 +393,54 @@ export default function Discovery({ navigation }) {
                   <Text style={styles.restartText}>Ver de novo</Text>
                 </TouchableOpacity>
               )}
-            </BlurView>
+            </View>
           )}
         </View>
+
+        {/* Ações: passar / super like / curtir (com feedback tátil) */}
         <View style={styles.actions}>
-          <BlurView intensity={40} tint="light" style={[styles.glass, styles.pass]}>
-            <TouchableOpacity testID="btn-pass" style={styles.hit} onPress={next} disabled={liking} accessibilityRole="button" accessibilityLabel="Passar perfil">
-              <Ionicons name="close" size={32} color="#7B1FCF" />
-            </TouchableOpacity>
-          </BlurView>
-          <BlurView intensity={40} tint="light" style={[styles.glass, styles.super, styles.small]}>
-            <TouchableOpacity testID="btn-superlike" style={styles.hit} onPress={next} disabled={liking} accessibilityRole="button" accessibilityLabel="Super like">
-              <Ionicons name="star" size={20} color="#2D9CDB" />
-            </TouchableOpacity>
-          </BlurView>
-          <BlurView intensity={40} tint="light" style={[styles.glass, styles.like]}>
-            <TouchableOpacity testID="btn-like" style={styles.hit} onPress={handleLike} disabled={liking} accessibilityRole="button" accessibilityLabel="Curtir perfil">
-              <Ionicons name="heart" size={30} color="#12B76A" />
-            </TouchableOpacity>
-          </BlurView>
+          <TouchableOpacity
+            testID="btn-pass"
+            style={[styles.actionButton, styles.actionSecondary]}
+            onPress={() => {
+              tapLight();
+              swipeWithButton("pass");
+            }}
+            disabled={liking}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Passar perfil"
+          >
+            <Ionicons name="close" size={30} color={colors.dangerText} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="btn-superlike"
+            style={[styles.actionButton, styles.actionSmall]}
+            onPress={() => {
+              tapLight();
+              next();
+            }}
+            disabled={liking}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Super like"
+          >
+            <Ionicons name="star" size={20} color={colors.accent} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="btn-like"
+            style={[styles.actionButton, styles.actionPrimary]}
+            onPress={() => {
+              tapMedium();
+              swipeWithButton("like");
+            }}
+            disabled={liking}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Curtir perfil"
+          >
+            <Ionicons name="heart" size={30} color={colors.onPrimary} />
+          </TouchableOpacity>
         </View>
         <Modal
           visible={Boolean(reportTarget)}
@@ -426,7 +494,7 @@ export default function Discovery({ navigation }) {
                       <Ionicons
                         name={selected ? "radio-button-on" : "radio-button-off"}
                         size={20}
-                        color={selected ? colors.primary : colors.textMuted}
+                        color={selected ? colors.accent : colors.textTertiary}
                       />
                     </TouchableOpacity>
                   );
@@ -436,7 +504,8 @@ export default function Discovery({ navigation }) {
                 testID="report-description"
                 style={styles.reportDescription}
                 placeholder="Detalhes adicionais (opcional)"
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={colors.textTertiary}
+                selectionColor={colors.primary}
                 value={reportDescription}
                 onChangeText={setReportDescription}
                 multiline
@@ -467,7 +536,7 @@ export default function Discovery({ navigation }) {
                   accessibilityRole="button"
                 >
                   {submittingReport ? (
-                    <ActivityIndicator color={colors.white} />
+                    <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={styles.reportSubmitText}>Enviar denúncia</Text>
                   )}
@@ -502,7 +571,9 @@ export default function Discovery({ navigation }) {
                 }}
                 style={styles.matchPhoto}
               />
-              <Ionicons name="heart" size={26} color="#E84683" style={styles.matchHeart} />
+              <View style={styles.matchHeart}>
+                <Ionicons name="heart" size={20} color={colors.onPrimary} />
+              </View>
               <Image
                 testID="match-modal-profile-photo"
                 source={{ uri: matchProfile?.photo || avatarFallback(matchProfile?.name) }}
@@ -528,153 +599,243 @@ export default function Discovery({ navigation }) {
           </View>
         </View>
       </Modal>
-    </LinearGradient>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  bg: { flex: 1 },
-  safe: { flex: 1, paddingHorizontal: 18 },
-  topBar: { height: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8, position: "relative" },
-  avatarRing: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.9)", padding: 2, zIndex: 2 },
-  avatar: { width: "100%", height: "100%", borderRadius: 20 },
-  brandCenter: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center", zIndex: 1 },
-  brandLogo: { width: 72, height: 48 },
-  topRight: { flexDirection: "row", alignItems: "center", columnGap: 8 },
-  pillIcon: {
-    width: 40, height: 40, borderRadius: 20, overflow: "hidden",
-    alignItems: "center", justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.25)",
-  },
-  pill: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 132, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.85)", backgroundColor: "rgba(42,10,85,0.45)", zIndex: 2, flexShrink: 1 },
-  pillText: { fontSize: 12, fontWeight: "700", color: "#fff", flexShrink: 1 },
-  cardArea: { flex: 1, justifyContent: "center", paddingVertical: 12, overflow: "hidden" },
-  empty: { borderRadius: 28, padding: 24, alignItems: "center", gap: 10, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.7)" },
-  emptyTitle: { fontSize: 18, fontWeight: "800", color: "#2A0A55", textAlign: "center" },
-  emptySubtitle: { fontSize: 14, color: "#5B5B66", textAlign: "center" },
-  restart: { backgroundColor: "#6D1BC7", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999 },
-  restartText: { color: "#fff", fontWeight: "800" },
-  actions: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 22, marginTop: 8, paddingBottom: 136 },
-  glass: { width: 72, height: 72, borderRadius: 36, overflow: "hidden", alignItems: "center", justifyContent: "center", borderWidth: 1.6, backgroundColor: "rgba(255,255,255,0.65)" },
-  small: { width: 72, height: 72, borderRadius: 36 },
-  pass: { borderColor: "#7B1FCF" },
-  super: { borderColor: "#2D9CDB" },
-  like: { borderColor: "#12B76A" },
-  hit: { width: "100%", height: "100%", alignItems: "center", justifyContent: "center" },
-  matchOverlay: { flex: 1, backgroundColor: "rgba(25, 5, 48, 0.78)", alignItems: "center", justifyContent: "center", padding: 24 },
-  matchModal: { width: "100%", maxWidth: 380, alignItems: "center", padding: 28, borderRadius: 28, backgroundColor: "#FFF9FF" },
-  matchTitle: { color: "#6D1BC7", fontSize: 30, fontWeight: "900", textAlign: "center" },
-  matchSubtitle: { color: "#5B5262", fontSize: 15, textAlign: "center", marginTop: 8 },
-  matchPhotos: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginVertical: 26 },
-  matchPhoto: { width: 104, height: 104, borderRadius: 52, borderWidth: 4, borderColor: "#fff" },
-  matchHeart: { marginHorizontal: -8, zIndex: 1 },
-  matchChatButton: { width: "100%", backgroundColor: "#6D1BC7", borderRadius: 999, paddingVertical: 15, alignItems: "center" },
-  matchChatText: { color: "#fff", fontSize: 15, fontWeight: "800" },
-  matchContinueButton: { paddingVertical: 14 },
-  matchContinueText: { color: "#6D1BC7", fontSize: 14, fontWeight: "700" },
-  reportOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.6)",
-  },
-  reportSheet: {
-    maxHeight: "88%",
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    backgroundColor: colors.surface,
-  },
-  reportHandle: {
-    width: 40,
-    height: 4,
-    alignSelf: "center",
-    marginBottom: spacing.md,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-  },
-  reportTitle: {
-    ...typography.h2,
-    color: colors.text,
-  },
-  reportSubtitle: {
-    ...typography.body,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
-    marginBottom: spacing.md,
-  },
-  reportReasons: {
-    flexGrow: 0,
-  },
-  reportReason: {
-    minHeight: 48,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    backgroundColor: colors.background,
-  },
-  reportReasonSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.surfaceAlt,
-  },
-  reportReasonText: {
-    ...typography.body,
-    flex: 1,
-    color: colors.text,
-    marginRight: spacing.sm,
-  },
-  reportReasonTextSelected: {
-    color: colors.primaryLight,
-  },
-  reportDescription: {
-    minHeight: 72,
-    maxHeight: 112,
-    padding: spacing.md,
-    marginTop: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    backgroundColor: colors.background,
-    color: colors.text,
-    ...typography.body,
-  },
-  reportActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    columnGap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  reportCancel: {
-    minHeight: 48,
-    justifyContent: "center",
-    paddingHorizontal: spacing.md,
-  },
-  reportCancelText: {
-    ...typography.body,
-    color: colors.textMuted,
-    fontWeight: "600",
-  },
-  reportSubmit: {
-    minHeight: 48,
-    minWidth: 148,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: colors.danger,
-  },
-  reportSubmitDisabled: {
-    opacity: 0.5,
-  },
-  reportSubmitText: {
-    ...typography.body,
-    color: colors.white,
-    fontWeight: "700",
-  },
-});
+const createStyles = (colors) =>
+  StyleSheet.create({
+    bg: { flex: 1, backgroundColor: colors.background },
+    safe: { flex: 1, paddingHorizontal: spacing.md },
+    topBar: { height: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4, position: "relative" },
+    avatarRing: { width: 42, height: 42, borderRadius: 21, padding: 2, borderWidth: 1.5, borderColor: colors.border, alignItems: "center", justifyContent: "center", zIndex: 2 },
+    brandCenter: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center", zIndex: 1 },
+    brandLogo: { width: 64, height: 42 },
+    topRight: { flexDirection: "row", alignItems: "center", columnGap: 8, zIndex: 2 },
+    iconButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    pill: {
+      flexDirection: "row",
+      alignItems: "center",
+      columnGap: 6,
+      maxWidth: 132,
+      height: 40,
+      paddingHorizontal: 12,
+      borderRadius: radius.pill,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      flexShrink: 1,
+    },
+    pillText: { ...typography.label, fontSize: 12, color: colors.textPrimary, flexShrink: 1 },
+    cardArea: { flex: 1, justifyContent: "center", paddingVertical: 10, overflow: "hidden" },
+    // Pilha: cartão atual por cima e o próximo espiando atrás (mesmo tamanho).
+    deckStack: { flex: 1, width: "100%" },
+    peek: {
+      ...StyleSheet.absoluteFillObject,
+      borderRadius: 24,
+      overflow: "hidden",
+      backgroundColor: colors.surfaceMuted,
+      transform: [{ scale: 0.95 }, { translateY: 10 }],
+      opacity: 0.85,
+    },
+    peekImage: { width: "100%", height: "100%" },
+    empty: {
+      borderRadius: radius.xl,
+      padding: spacing.lg,
+      alignItems: "center",
+      rowGap: 8,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    emptyBadge: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.primarySoft,
+      marginBottom: 4,
+    },
+    emptyTitle: { ...typography.h3, color: colors.textPrimary, textAlign: "center" },
+    emptySubtitle: { ...typography.body, fontSize: 14, color: colors.textSecondary, textAlign: "center" },
+    restart: { marginTop: 8, backgroundColor: colors.primary, paddingHorizontal: 20, height: 42, justifyContent: "center", borderRadius: radius.pill },
+    restartText: { ...typography.label, color: colors.onPrimary },
+    // A barra inferior é fixa agora: basta um respiro normal embaixo.
+    actions: { flexDirection: "row", alignItems: "center", justifyContent: "center", columnGap: 20, marginTop: 6, paddingBottom: spacing.md },
+    actionButton: {
+      alignItems: "center",
+      justifyContent: "center",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: colors.scheme === "dark" ? 0.4 : 0.1,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    actionSecondary: {
+      width: 62,
+      height: 62,
+      borderRadius: 31,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    actionSmall: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    actionPrimary: {
+      width: 68,
+      height: 68,
+      borderRadius: 34,
+      backgroundColor: colors.primary,
+    },
+    matchOverlay: { flex: 1, backgroundColor: colors.overlay, alignItems: "center", justifyContent: "center", padding: spacing.lg },
+    matchModal: {
+      width: "100%",
+      maxWidth: 380,
+      alignItems: "center",
+      padding: spacing.lg,
+      borderRadius: radius.xl,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    matchTitle: { ...typography.h1, fontSize: 28, color: colors.accent, textAlign: "center" },
+    matchSubtitle: { ...typography.body, color: colors.textSecondary, textAlign: "center", marginTop: 6 },
+    matchPhotos: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginVertical: spacing.lg },
+    matchPhoto: { width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: colors.surfaceElevated, backgroundColor: colors.surfaceMuted },
+    matchHeart: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      marginHorizontal: -10,
+      zIndex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.primary,
+      borderWidth: 3,
+      borderColor: colors.surfaceElevated,
+    },
+    matchChatButton: { width: "100%", backgroundColor: colors.primary, borderRadius: radius.pill, height: 50, justifyContent: "center", alignItems: "center" },
+    matchChatText: { ...typography.bodyStrong, color: colors.onPrimary },
+    matchContinueButton: { paddingVertical: 14 },
+    matchContinueText: { ...typography.label, fontSize: 14, color: colors.accent },
+    reportOverlay: {
+      flex: 1,
+      justifyContent: "flex-end",
+      backgroundColor: colors.overlay,
+    },
+    reportSheet: {
+      maxHeight: "88%",
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.xl,
+      borderTopLeftRadius: radius.xl,
+      borderTopRightRadius: radius.xl,
+      backgroundColor: colors.surfaceElevated,
+    },
+    reportHandle: {
+      width: 36,
+      height: 4,
+      alignSelf: "center",
+      marginBottom: spacing.md,
+      borderRadius: 2,
+      backgroundColor: colors.border,
+    },
+    reportTitle: {
+      ...typography.h2,
+      color: colors.textPrimary,
+    },
+    reportSubtitle: {
+      ...typography.body,
+      color: colors.textSecondary,
+      marginTop: spacing.xs,
+      marginBottom: spacing.md,
+    },
+    reportReasons: {
+      flexGrow: 0,
+    },
+    reportReason: {
+      minHeight: 48,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: spacing.md,
+      marginBottom: spacing.xs,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.surface,
+    },
+    reportReasonSelected: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primarySoft,
+    },
+    reportReasonText: {
+      ...typography.body,
+      flex: 1,
+      color: colors.textPrimary,
+      marginRight: spacing.sm,
+    },
+    reportReasonTextSelected: {
+      color: colors.accent,
+      fontWeight: "600",
+    },
+    reportDescription: {
+      minHeight: 72,
+      maxHeight: 112,
+      padding: spacing.md,
+      marginTop: spacing.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.inputBg,
+      color: colors.textPrimary,
+      ...typography.body,
+    },
+    reportActions: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      columnGap: spacing.sm,
+      marginTop: spacing.md,
+    },
+    reportCancel: {
+      minHeight: 48,
+      justifyContent: "center",
+      paddingHorizontal: spacing.md,
+    },
+    reportCancelText: {
+      ...typography.bodyStrong,
+      color: colors.textSecondary,
+    },
+    reportSubmit: {
+      minHeight: 48,
+      minWidth: 148,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.md,
+      backgroundColor: colors.dangerDark,
+    },
+    reportSubmitDisabled: {
+      opacity: 0.5,
+    },
+    reportSubmitText: {
+      ...typography.bodyStrong,
+      color: "#FFFFFF",
+    },
+  });

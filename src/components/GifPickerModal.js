@@ -16,11 +16,14 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { searchGifs } from "../services/giphy";
-import { colors, radius, spacing, typography } from "../styles/theme";
+import { radius, spacing, typography } from "../styles/theme";
+import { useTheme, useThemedStyles } from "../contexts/ThemeContext";
 
 const SEARCH_DEBOUNCE_MS = 400;
 
 export default function GifPickerModal({ visible, onClose, onSelect }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [term, setTerm] = useState("");
   const [gifs, setGifs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -124,11 +127,12 @@ export default function GifPickerModal({ visible, onClose, onSelect }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) =>
+  StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: colors.overlay,
   },
   sheet: {
     height: "70%",

@@ -13,6 +13,11 @@ import {
   normalizeMessage,
   normalizeMessageList,
   setMessageStatus,
+  buildReplyQuote,
+  replyQuoteText,
+  messagePreviewLabel,
+  parseMeeting,
+  MEETING_TAG,
 } from "../../src/utils/chatMessages";
 
 const ME = "me";
@@ -186,7 +191,7 @@ describe("normalizeMessage — imagem, localização e citação", () => {
   });
   it("lê a citação de resposta quando presente", () => {
     const m = normalizeMessage({ id: 3, content: "resposta", reply_to_content: "original", reply_to_sender: "Você" }, ME);
-    expect(m.replyTo).toEqual({ content: "original", sender: "Você" });
+    expect(m.replyTo).toMatchObject({ content: "original", sender: "Você", isMine: true, type: "text" });
   });
 });
 
@@ -251,10 +256,64 @@ describe("convite de encontro", () => {
     const list = [normalizeMessage({ id: 1, sender_id: ME, content: buildInviteMessage(payload) }, ME)];
     const accepted = applyInviteResponse(list, "1", "aceite");
     expect(accepted[0].invite).toBeNull();
-    expect(accepted[0].text).toBe("✅ Convite Aceite!");
+    // Aceito vira "Encontro marcado" GUARDANDO data/local do convite.
+    expect(accepted[0].text.startsWith(MEETING_TAG)).toBe(true);
+    expect(accepted[0].meeting).toEqual({ titulo: "Café", scheduled_at: "2026-11-18T15:07", local: "Centro" });
     expect(accepted[0].inviteStatus).toBe("accepted");
+    expect(messagePreviewLabel(accepted[0])).toBe("Encontro marcado");
     const rejected = applyInviteResponse(list, "1", "recusado");
     expect(rejected[0].text).toBe("❌ Convite Recusado");
+    expect(rejected[0].meeting).toBeNull();
+  });
+
+  it("applyInviteResponse usa o meeting que a API mandou no invite_updated", () => {
+    const list = [normalizeMessage({ id: 1, sender_id: ME, content: buildInviteMessage(payload) }, ME)];
+    const viaSocket = applyInviteResponse(list, "1", "aceite", {
+      content: `${MEETING_TAG}{"local":"Praia"}`, meeting: { local: "Praia" },
+    });
+    expect(viaSocket[0].meeting).toEqual({ local: "Praia" });
+  });
+});
+
+describe("Encontro marcado", () => {
+  it("normaliza o meeting da API", () => {
+    const m = normalizeMessage({
+      id: 7, sender_id: "outro", content: `${MEETING_TAG}{}`,
+      meeting: { titulo: "Café", local: "Dragão do Mar", scheduled_at: "2026-11-22T19:00:00.000Z" },
+    }, ME);
+    expect(m.meeting).toEqual({ titulo: "Café", local: "Dragão do Mar", scheduled_at: "2026-11-22T19:00:00.000Z" });
+    expect(m.inviteStatus).toBe("accepted");
+  });
+
+  it("aceites antigos (\"✅ Convite Aceite!\") também viram o card, sem detalhes", () => {
+    const m = normalizeMessage({ id: 8, sender_id: "outro", content: "✅ Convite Aceite!" }, ME);
+    expect(m.meeting).toEqual({});
+    expect(parseMeeting("❌ Convite Recusado")).toBeNull();
+    expect(parseMeeting("oi")).toBeNull();
+  });
+});
+
+describe("resposta com citação (reply_to)", () => {
+  it("lê o reply_to da API com autor, tipo e texto", () => {
+    const m = normalizeMessage({
+      id: 9, sender_id: ME, content: "Sábado sim!",
+      reply_to: { id: 3, sender_id: "outro", sender_name: "Marina", type: "text", content: "Bora no sábado?" },
+    }, ME);
+    expect(m.replyTo).toEqual({ id: "3", senderId: "outro", sender: "Marina", isMine: false, type: "text", content: "Bora no sábado?" });
+  });
+
+  it("marca como minha a citação de uma mensagem que eu enviei", () => {
+    const m = normalizeMessage({ id: 9, sender_id: "outro", content: "ok", reply_to: { id: 2, sender_id: ME, type: "text", content: "oi" } }, ME);
+    expect(m.replyTo.isMine).toBe(true);
+  });
+
+  it("buildReplyQuote monta a citação local com o tipo e o rótulo", () => {
+    const foto = normalizeMessage({ id: 4, sender_id: "outro", content: "https://res.cloudinary.com/x/foto.jpg" }, ME);
+    const q = buildReplyQuote(foto, { contactName: "Marina" });
+    expect(q).toMatchObject({ id: "4", sender: "Marina", isMine: false, type: "image" });
+    expect(replyQuoteText(q)).toBe("Foto");
+    const unica = normalizeMessage({ id: 5, sender_id: "outro", content: null, is_view_once: true }, ME);
+    expect(replyQuoteText(buildReplyQuote(unica))).toBe("Foto de visualização única");
   });
 });
 

@@ -4,7 +4,7 @@
 
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { colors } from "../styles/theme";
+import { useTheme } from "../contexts/ThemeContext";
 
 import Login from "../screens/Login"; // T011: tela real da T010
 import Register from "../screens/Register"; // T012: tela real da T010
@@ -13,6 +13,7 @@ import ForgotPassword from "../screens/ForgotPassword"; // T013: tela real (ante
 const Stack = createNativeStackNavigator();
 
 export default function AuthRoutes() {
+  const { colors } = useTheme();
   return (
     <Stack.Navigator
       initialRouteName="Login"

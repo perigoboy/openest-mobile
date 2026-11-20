@@ -67,6 +67,41 @@ export function isImageContent(text = "") {
 export const INVITE_TAG = "[CONVITE_EVENTO]";
 export const INVITE_ACCEPTED_TEXT = "✅ Convite Aceite!";
 export const INVITE_REJECTED_TEXT = "❌ Convite Recusado";
+// Convite aceito: a API grava "[ENCONTRO_MARCADO]{titulo, scheduled_at,
+// local, nota}" e devolve `meeting` pronto. Aceites antigos (texto acima)
+// também viram o card, só que sem detalhes.
+export const MEETING_TAG = "[ENCONTRO_MARCADO]";
+export const DELETED_MESSAGE_TEXT = "🚫 Mensagem apagada";
+
+// Ids de bolhas ainda não confirmadas ("temp-...") não existem no servidor.
+export function isServerId(id) {
+  return id != null && id !== "" && !String(id).startsWith("temp-");
+}
+
+const MEETING_FIELDS = ["titulo", "scheduled_at", "local", "nota"];
+
+export function buildMeetingContent(invite = {}) {
+  const meeting = {};
+  MEETING_FIELDS.forEach((key) => {
+    if (invite && invite[key] != null && invite[key] !== "") meeting[key] = invite[key];
+  });
+  return { text: `${MEETING_TAG}${JSON.stringify(meeting)}`, meeting };
+}
+
+// Dados do encontro marcado ({} sem detalhes) ou null se não for um.
+export function parseMeeting(raw) {
+  if (raw && raw.meeting && typeof raw.meeting === "object") return raw.meeting;
+  const text = typeof raw === "string" ? raw : raw?.content ?? raw?.text ?? "";
+  const value = String(text || "");
+  if (value === INVITE_ACCEPTED_TEXT) return {};
+  if (!value.startsWith(MEETING_TAG)) return null;
+  try {
+    const data = JSON.parse(value.slice(MEETING_TAG.length));
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
 
 export function buildInviteMessage(payload) {
   return `${INVITE_TAG}${JSON.stringify(payload || {})}`;
@@ -86,7 +121,7 @@ export function parseInviteMessage(text = "") {
 
 // Status visível depois que o convite foi respondido.
 export function inviteStatusFromText(text = "") {
-  if (text === INVITE_ACCEPTED_TEXT) return "accepted";
+  if (text === INVITE_ACCEPTED_TEXT || String(text).startsWith(MEETING_TAG)) return "accepted";
   if (text === INVITE_REJECTED_TEXT) return "rejected";
   return null;
 }
@@ -120,8 +155,11 @@ export function normalizeMessage(raw, currentUserId) {
   if (!raw || raw.id == null) return null;
   const text = typeof raw.content === "string" ? raw.content : "";
   const createdAt = raw.createdAt || raw.created_at || null;
-  const invite = parseInviteMessage(text);
-  const isImage = !invite && isImageContent(text);
+  // Foto de visualização única: a API nunca manda a URL (content = null);
+  // a tela mostra só o card "Foto"/"Aberta".
+  const isViewOnce = raw.is_view_once === true;
+  const invite = isViewOnce ? null : parseInviteMessage(text);
+  const isImage = !isViewOnce && !invite && isImageContent(text);
   return {
     id: String(raw.id),
     text,
@@ -129,15 +167,84 @@ export function normalizeMessage(raw, currentUserId) {
     createdAt,
     isMine: currentUserId != null && String(raw.sender_id) === String(currentUserId),
     isImage,
+    isViewOnce,
+    viewOnceOpened: isViewOnce && raw.is_opened === true,
+    caption: !isViewOnce && typeof raw.caption === "string" && raw.caption ? raw.caption : null,
     invite, // dados do convite de encontro (pendente) ou null
     inviteStatus: inviteStatusFromText(text), // 'accepted' | 'rejected' | null
-    location: isImage || invite ? null : parseLocationMessage(text),
-    // Citação da resposta (local; o backend não persiste — igual ao web).
-    replyTo: raw.reply_to_content
-      ? { content: raw.reply_to_content, sender: raw.reply_to_sender || null }
-      : null,
+    // Convite aceito: card "Encontro marcado" (data/local quando houver).
+    meeting: isViewOnce ? null : parseMeeting(raw),
+    location: isImage || invite || isViewOnce ? null : parseLocationMessage(text),
+    // Citação da resposta (`reply_to` da API: id, autor, tipo e texto).
+    replyTo: normalizeReply(raw, currentUserId),
     status: statusFromRaw(raw),
   };
+}
+
+// `reply_to` da API → { id, senderId, sender, isMine, type, content }.
+// Mantém o formato antigo local (reply_to_content) por compatibilidade.
+export function normalizeReply(raw, currentUserId) {
+  const r = raw?.reply_to;
+  if (r && typeof r === "object") {
+    const senderId = r.sender_id != null ? String(r.sender_id) : null;
+    return {
+      id: r.id != null ? String(r.id) : null,
+      senderId,
+      sender: r.sender_name || null,
+      isMine: currentUserId != null && senderId === String(currentUserId),
+      type: r.type || "text",
+      content: r.content || "",
+    };
+  }
+  if (raw?.reply_to_content) {
+    return { id: null, senderId: null, sender: raw.reply_to_sender || null, isMine: raw.reply_to_sender === "Você", type: "text", content: raw.reply_to_content };
+  }
+  return null;
+}
+
+// Tipo da mensagem da tela (mesmos tipos da API).
+export function messageKind(message) {
+  if (!message) return "text";
+  if (message.isDeleted || message.text === DELETED_MESSAGE_TEXT) return "deleted";
+  if (message.isViewOnce) return "view_once";
+  if (message.invite) return "invite";
+  if (message.meeting || message.inviteStatus) return "invite_answer";
+  if (message.isImage) return "image";
+  if (message.location) return "location";
+  return "text";
+}
+
+// Citação local de uma mensagem da tela (bolha otimista e barra acima do
+// campo), no mesmo formato de normalizeReply.
+export function buildReplyQuote(message, { contactName = null } = {}) {
+  if (!message) return null;
+  if (message.type && message.isMine === undefined) return message; // já é citação
+  return {
+    id: message.id != null ? String(message.id) : null,
+    senderId: null,
+    sender: message.isMine ? "Você" : contactName,
+    isMine: !!message.isMine,
+    type: messageKind(message),
+    content: messagePreviewLabel(message),
+  };
+}
+
+const REPLY_LABELS = {
+  image: "Foto",
+  view_once: "Foto de visualização única",
+  location: "Localização",
+  invite: "Convite de encontro",
+  deleted: "Mensagem apagada",
+};
+
+// Texto curto exibido na citação (o ícone vem do `type`).
+export function replyQuoteText(reply) {
+  if (!reply) return "";
+  if (reply.type === "invite_answer") {
+    return /recusad/i.test(reply.content || "") ? "Convite recusado" : "Encontro marcado";
+  }
+  if (reply.type === "image" && reply.content && !isImageContent(reply.content)) return reply.content;
+  return REPLY_LABELS[reply.type] || String(reply.content || "");
 }
 
 export function normalizeMessageList(rawList, currentUserId) {
@@ -164,6 +271,7 @@ export function createPendingMessage(tempId, text, { replyTo = null, now = new D
     isImage: !invite && isImageContent(text),
     invite,
     inviteStatus: inviteStatusFromText(text),
+    meeting: parseMeeting(text),
     location: invite ? null : parseLocationMessage(text),
     replyTo,
     status: MESSAGE_STATUS.PENDING,
@@ -172,34 +280,66 @@ export function createPendingMessage(tempId, text, { replyTo = null, now = new D
 
 // Convite respondido (aceite/recusado): troca o conteúdo pelo status e tira o
 // card. Usado ao tocar em Aceitar/Recusar e ao receber `invite_updated`.
-export function applyInviteResponse(list, messageId, responseStatus) {
+// Aceito vira o card "Encontro marcado" com os dados do convite (ou os que a
+// API mandou em `payload`); recusado vira o aviso.
+export function applyInviteResponse(list, messageId, responseStatus, payload = null) {
   const id = String(messageId);
-  const text = responseStatus === "aceite" || responseStatus === "accepted"
-    ? INVITE_ACCEPTED_TEXT
-    : INVITE_REJECTED_TEXT;
+  const accepted = responseStatus === "aceite" || responseStatus === "accepted";
   let changed = false;
   const next = list.map((m) => {
     if (m.id !== id) return m;
     changed = true;
-    return { ...m, text, invite: null, inviteStatus: inviteStatusFromText(text), location: null };
+    if (accepted) {
+      const local = buildMeetingContent(m.invite || {});
+      const meeting = payload?.meeting && typeof payload.meeting === "object" ? payload.meeting : local.meeting;
+      const text = typeof payload?.content === "string" && payload.content ? payload.content : local.text;
+      return { ...m, text, invite: null, inviteStatus: "accepted", meeting, location: null };
+    }
+    return { ...m, text: INVITE_REJECTED_TEXT, invite: null, inviteStatus: "rejected", meeting: null, location: null };
   });
   return changed ? next : list;
 }
 
 // Bolha otimista de IMAGEM: mostra a prévia local (uri do device) enquanto o
 // upload ao Cloudinary não volta.
-export function createPendingImageMessage(tempId, localUri, now = new Date()) {
+export function createPendingImageMessage(tempId, localUri, now = new Date(), { caption = null, viewOnce = false, replyTo = null } = {}) {
   return {
     id: tempId,
-    text: localUri,
+    // Visualização única: nem a bolha de quem enviou mostra a foto.
+    text: viewOnce ? "" : localUri,
     time: formatMessageTime(now),
     createdAt: now.toISOString(),
     isMine: true,
-    isImage: true,
+    isImage: !viewOnce,
+    isViewOnce: !!viewOnce,
+    viewOnceOpened: false,
+    caption: viewOnce ? null : caption || null,
     location: null,
-    replyTo: null,
+    replyTo,
     status: MESSAGE_STATUS.PENDING,
   };
+}
+
+// `message_view_once_opened` (socket) ou abertura local: vira "Aberta" e
+// não pode ser aberta de novo.
+export function markViewOnceOpened(list, messageId) {
+  return (list || []).map((message) =>
+    String(message.id) === String(messageId) && message.isViewOnce
+      ? { ...message, viewOnceOpened: true }
+      : message
+  );
+}
+
+// Texto curto para prévias (citação de resposta, lista de conversas).
+export function messagePreviewLabel(message) {
+  if (!message) return "";
+  if (message.isViewOnce) return message.viewOnceOpened ? "Foto aberta" : "Foto";
+  if (message.isImage) return message.caption || "Foto";
+  if (message.invite) return "Convite de encontro";
+  if (message.meeting) return "Encontro marcado";
+  if (message.inviteStatus === "rejected") return "Convite recusado";
+  if (message.location) return "Localização";
+  return message.text || "";
 }
 
 // Mensagem que chegou pelo socket (`new_message`).
@@ -234,8 +374,8 @@ export function confirmPendingMessage(list, tempId, raw, currentUserId) {
   const saved = normalizeMessage(raw, currentUserId);
   const tempIndex = list.findIndex((m) => m.id === tempId);
   const pending = tempIndex !== -1 ? list[tempIndex] : null;
-  // A citação da resposta é local (o backend não a devolve); preserva a da
-  // bolha otimista ao confirmar — mesmo comportamento do web.
+  // A citação confirmada pela API (com o nome do autor) tem prioridade; a da
+  // bolha otimista fica de reserva (API antiga, sem reply_to).
   const merged = saved && pending ? { ...saved, replyTo: saved.replyTo || pending.replyTo || null } : saved;
 
   if (!saved) {

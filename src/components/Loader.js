@@ -1,58 +1,52 @@
+// Indicador de carregamento. Em tela cheia (enquanto o app decide a rota),
+// mostra a marca sobre o fundo do tema — sem degradê nem cartão de vidro.
 import React from "react";
 import { View, ActivityIndicator, StyleSheet, Image } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
+import { useTheme, useThemedStyles } from "../contexts/ThemeContext";
 
 export default function Loader({ fullScreen = false, size = "large" }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+
   if (fullScreen) {
     return (
-      <LinearGradient colors={['#3a0ca3', '#1e003b']} style={styles.fullScreen}>
-        <View style={styles.cardContainer}>
-          <BlurView intensity={40} tint="light" style={styles.blurCard}>
-            <Image 
-              source={require("../../assets/logo-chama.png")} 
-              style={styles.logo} 
-              resizeMode="contain" 
-            />
-            <ActivityIndicator size={size} color="#fff" style={{ marginTop: 20 }} />
-          </BlurView>
-        </View>
-      </LinearGradient>
+      <View style={styles.fullScreen}>
+        <Image
+          source={require("../../assets/logo-chama.png")}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityIgnoresInvertColors
+        />
+        <ActivityIndicator size={size} color={colors.accent} style={styles.spinner} accessibilityLabel="Carregando" />
+      </View>
     );
   }
 
   return (
     <View style={styles.inline}>
-      <ActivityIndicator size={size} color="#7209b7" />
+      <ActivityIndicator size={size} color={colors.primary} accessibilityLabel="Carregando" />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  fullScreen: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cardContainer: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  blurCard: {
-    padding: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  logo: {
-    width: 80,
-    height: 80,
-  },
-  inline: {
-    paddingVertical: 24,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
+const createStyles = (colors) =>
+  StyleSheet.create({
+    fullScreen: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.background,
+    },
+    logo: {
+      width: 72,
+      height: 72,
+    },
+    spinner: {
+      marginTop: 24,
+    },
+    inline: {
+      paddingVertical: 24,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+  });
