@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, StyleSheet } from "react-native";
-import { colors, spacing, radius, typography } from "../styles/theme";
+import { useTheme, useThemedStyles } from "../contexts/ThemeContext";
+import { spacing, radius, typography } from "../styles/theme";
 
 export default function Input({
   label,
@@ -8,6 +9,8 @@ export default function Input({
   containerStyle,
   ...textInputProps
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [focused, setFocused] = useState(false);
 
   return (
@@ -19,7 +22,8 @@ export default function Input({
         // (ou o placeholder) para anunciar o campo.
         accessibilityLabel={label || textInputProps.placeholder}
         accessibilityHint={error || undefined}
-        placeholderTextColor={colors.textMuted}
+        placeholderTextColor={colors.textTertiary}
+        selectionColor={colors.primary}
         style={[
           styles.input,
           focused && styles.inputFocused,
@@ -35,34 +39,36 @@ export default function Input({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    marginBottom: spacing.md,
-  },
-  label: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginBottom: spacing.xs,
-  },
-  input: {
-    height: 52,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    color: colors.text,
-    ...typography.body,
-  },
-  inputFocused: {
-    borderColor: colors.primary,
-  },
-  inputError: {
-    borderColor: colors.danger,
-  },
-  errorText: {
-    ...typography.caption,
-    color: colors.danger,
-    marginTop: spacing.xs,
-  },
-});
+const createStyles = (colors) =>
+  StyleSheet.create({
+    container: {
+      marginBottom: spacing.md,
+    },
+    label: {
+      ...typography.label,
+      color: colors.textSecondary,
+      marginBottom: 6,
+    },
+    input: {
+      height: 50,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.inputBg,
+      paddingHorizontal: spacing.md,
+      color: colors.textPrimary,
+      ...typography.body,
+    },
+    inputFocused: {
+      borderColor: colors.primary,
+      borderWidth: 1.5,
+    },
+    inputError: {
+      borderColor: colors.danger,
+    },
+    errorText: {
+      ...typography.caption,
+      color: colors.danger,
+      marginTop: spacing.xs,
+    },
+  });
