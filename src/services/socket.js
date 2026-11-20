@@ -30,6 +30,9 @@ export const SOCKET_EVENTS = {
   MESSAGE_DELIVERED_ACK: "message_delivered_ack",
   MARK_MESSAGES_READ: "mark_messages_read",
   MESSAGE_STATUS_UPDATED: "message_status_updated",
+  // Foto de visualização única
+  MARK_VIEW_ONCE_OPENED: "mark_view_once_opened",
+  MESSAGE_VIEW_ONCE_OPENED: "message_view_once_opened",
 };
 
 export const SOCKET_ACK_TIMEOUT_MS = 8000;

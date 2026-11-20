@@ -2,7 +2,7 @@
 // T045 — lógica do chat em tempo real com um socket FALSO (sem rede).
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { TYPING_EXPIRE_MS, TYPING_IDLE_MS, useChat } from "../../src/hooks/useChat";
-import { deleteMessageForEveryone, fetchMessages, sendChatImage, sendMessageRest } from "../../src/services/messages";
+import { deleteMessageForEveryone, fetchMessages, openViewOnceMessage, sendChatImage, sendMessageRest } from "../../src/services/messages";
 import { getHiddenMessageIds, hideMessageForMe as persistHiddenMessage } from "../../src/services/hiddenMessages";
 import { __mockSocket as socket, emitWithAck } from "../../src/services/socket";
 
@@ -11,6 +11,7 @@ jest.mock("../../src/services/messages", () => ({
   sendMessageRest: jest.fn(),
   sendChatImage: jest.fn(),
   deleteMessageForEveryone: jest.fn(),
+  openViewOnceMessage: jest.fn(),
 }));
 jest.mock("../../src/services/hiddenMessages", () => ({
   getHiddenMessageIds: jest.fn().mockResolvedValue([]),
@@ -49,6 +50,10 @@ jest.mock("../../src/services/socket", () => {
       TYPING_START: "typing_start",
       TYPING_STOP: "typing_stop",
       USER_TYPING: "user_typing",
+      MESSAGE_STATUS_UPDATED: "message_status_updated",
+      MARK_MESSAGES_READ: "mark_messages_read",
+      MARK_VIEW_ONCE_OPENED: "mark_view_once_opened",
+      MESSAGE_VIEW_ONCE_OPENED: "message_view_once_opened",
     },
     getSocket: () => fake,
     isSocketConnected: () => fake.connected,
@@ -454,7 +459,7 @@ describe("useChat — anexos e ações da mensagem", () => {
       await result.current.sendImage({ uri: "file:///a.jpg" });
     });
 
-    expect(sendChatImage).toHaveBeenCalledWith(10, { uri: "file:///a.jpg" });
+    expect(sendChatImage).toHaveBeenCalledWith(10, { uri: "file:///a.jpg" }, { caption: "", viewOnce: false });
     expect(result.current.messages[0]).toMatchObject({ id: "20", isImage: true, status: "sent" });
   });
 
@@ -568,5 +573,117 @@ describe("useChat — convite de encontro (agendamento)", () => {
     act(() => socket.fire("new_message", { id: 52, conversation_id: 10, sender_id: ME, content: `[CONVITE_EVENTO]${JSON.stringify(INVITE)}` }));
     act(() => socket.fire("invite_updated", { messageId: "52", status: "aceite" }));
     expect(result.current.messages.find((m) => m.id === "52").text).toBe("✅ Convite Aceite!");
+  });
+});
+
+
+// --- Legenda e foto de visualização única ---------------------------------
+describe("useChat — foto de visualização única", () => {
+  const VO = { id: 30, conversation_id: 10, sender_id: OTHER, content: null, is_view_once: true, is_opened: false, createdAt: "2026-11-19T20:00:00Z" };
+
+  it("sendImage com visualização única: a bolha de quem envia NÃO mostra a foto", async () => {
+    sendChatImage.mockReturnValue(new Promise(() => {})); // fica pendente
+    const { result } = await renderChatHook();
+
+    act(() => {
+      result.current.sendImage({ uri: "file:///segredo.jpg" }, { viewOnce: true });
+    });
+
+    const bolha = result.current.messages[0];
+    expect(bolha).toMatchObject({ isViewOnce: true, isImage: false, text: "", status: "pending" });
+    expect(sendChatImage).toHaveBeenCalledWith(10, { uri: "file:///segredo.jpg" }, { caption: "", viewOnce: true });
+  });
+
+  it("sendImage com legenda leva a legenda para a bolha e para a API", async () => {
+    sendChatImage.mockReturnValue(new Promise(() => {}));
+    const { result } = await renderChatHook();
+    act(() => {
+      result.current.sendImage({ uri: "file:///a.jpg" }, { caption: "praia" });
+    });
+    expect(result.current.messages[0]).toMatchObject({ isImage: true, caption: "praia" });
+    expect(sendChatImage).toHaveBeenCalledWith(10, { uri: "file:///a.jpg" }, { caption: "praia", viewOnce: false });
+  });
+
+  it("histórico: foto única chega sem URL e vira o card (não imagem)", async () => {
+    fetchMessages.mockResolvedValueOnce({ messages: [VO, ...HISTORY], hasNext: false });
+    const { result } = await renderChatHook();
+    const msg = result.current.messages.find((m) => m.id === "30");
+    expect(msg).toMatchObject({ isViewOnce: true, viewOnceOpened: false, isImage: false });
+  });
+
+  it("abrir pelo socket devolve a URL UMA vez e marca como aberta", async () => {
+    fetchMessages.mockResolvedValueOnce({ messages: [VO, ...HISTORY], hasNext: false });
+    emitWithAck.mockResolvedValueOnce({ ok: true, url: "https://x/unica.jpg", caption: null });
+    const { result } = await renderChatHook();
+    const msg = result.current.messages.find((m) => m.id === "30");
+
+    let aberta;
+    await act(async () => {
+      aberta = await result.current.openViewOnce(msg);
+    });
+
+    expect(emitWithAck).toHaveBeenCalledWith("mark_view_once_opened", { message_id: "30" });
+    expect(aberta).toEqual({ url: "https://x/unica.jpg", caption: null });
+    expect(result.current.messages.find((m) => m.id === "30").viewOnceOpened).toBe(true);
+  });
+
+  it("segunda abertura recusada (410) marca como aberta e lança o motivo", async () => {
+    fetchMessages.mockResolvedValueOnce({ messages: [VO, ...HISTORY], hasNext: false });
+    emitWithAck.mockResolvedValueOnce({ ok: false, code: "already_opened", error: "Esta foto já foi aberta." });
+    const { result } = await renderChatHook();
+    const msg = result.current.messages.find((m) => m.id === "30");
+
+    await act(async () => {
+      await expect(result.current.openViewOnce(msg)).rejects.toMatchObject({ code: "already_opened" });
+    });
+    expect(result.current.messages.find((m) => m.id === "30").viewOnceOpened).toBe(true);
+  });
+
+  it("sem socket, abre pela rota REST (reserva)", async () => {
+    fetchMessages.mockResolvedValueOnce({ messages: [VO, ...HISTORY], hasNext: false });
+    openViewOnceMessage.mockResolvedValueOnce({ url: "https://x/rest.jpg", caption: "oi" });
+    const { result } = await renderChatHook();
+    const msg = result.current.messages.find((m) => m.id === "30");
+
+    socket.connected = false;
+    try {
+      await act(async () => {
+        await expect(result.current.openViewOnce(msg)).resolves.toEqual({ url: "https://x/rest.jpg", caption: "oi" });
+      });
+    } finally {
+      socket.connected = true;
+    }
+    expect(openViewOnceMessage).toHaveBeenCalledWith("30");
+  });
+
+  it("quem enviou não abre a própria foto (nem chama a API)", async () => {
+    const { result } = await renderChatHook();
+    await act(async () => {
+      await expect(
+        result.current.openViewOnce({ id: "31", isViewOnce: true, isMine: true, viewOnceOpened: false })
+      ).rejects.toMatchObject({ code: "sender" });
+    });
+    expect(emitWithAck).not.toHaveBeenCalledWith("mark_view_once_opened", expect.anything());
+  });
+
+  it("evento em tempo real: quando o outro abre, a minha vira 'Aberta'", async () => {
+    const MINHA = { ...VO, id: 32, sender_id: ME };
+    fetchMessages.mockResolvedValueOnce({ messages: [MINHA, ...HISTORY], hasNext: false });
+    const { result } = await renderChatHook();
+
+    act(() => {
+      socket.fire("message_view_once_opened", { message_id: 32, conversation_id: 10 });
+    });
+    expect(result.current.messages.find((m) => m.id === "32").viewOnceOpened).toBe(true);
+  });
+
+  it("evento de OUTRA conversa é ignorado", async () => {
+    const MINHA = { ...VO, id: 33, sender_id: ME };
+    fetchMessages.mockResolvedValueOnce({ messages: [MINHA, ...HISTORY], hasNext: false });
+    const { result } = await renderChatHook();
+    act(() => {
+      socket.fire("message_view_once_opened", { message_id: 33, conversation_id: 999 });
+    });
+    expect(result.current.messages.find((m) => m.id === "33").viewOnceOpened).toBe(false);
   });
 });

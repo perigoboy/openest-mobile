@@ -21,6 +21,7 @@ import {
 import {
   deleteMessageForEveryone,
   fetchMessages,
+  openViewOnceMessage,
   sendChatImage,
   sendMessageRest,
 } from "../services/messages";
@@ -36,6 +37,7 @@ import {
   createPendingImageMessage,
   createPendingMessage,
   markMessageDeleted,
+  markViewOnceOpened,
   mergeHistory,
   mergeIncomingMessage,
   normalizeMessageList,
@@ -139,6 +141,14 @@ export function useChat(conversationId, currentUserId) {
       if (!isMine) markRead();
     };
 
+    // Foto de visualização única aberta (por mim em outro aparelho, ou pelo
+    // contato): vira "Aberta" na hora, sem refresh.
+    const handleViewOnceOpened = (payload) => {
+      if (String(payload?.conversation_id) !== String(conversationId)) return;
+      if (payload?.message_id == null) return;
+      setMessages((list) => markViewOnceOpened(list, payload.message_id));
+    };
+
     // Checks de entrega/leitura das MINHAS mensagens, em tempo real.
     const handleStatusUpdated = (payload) => {
       if (String(payload?.conversation_id) !== String(conversationId)) return;
@@ -169,6 +179,7 @@ export function useChat(conversationId, currentUserId) {
     socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleDeleted);
     socket.on(SOCKET_EVENTS.INVITE_UPDATED, handleInviteUpdated);
     socket.on(SOCKET_EVENTS.MESSAGE_STATUS_UPDATED, handleStatusUpdated);
+    socket.on(SOCKET_EVENTS.MESSAGE_VIEW_ONCE_OPENED, handleViewOnceOpened);
     socket.on(SOCKET_EVENTS.USER_TYPING, handleUserTyping);
 
     setConnected(socket.connected);
@@ -181,6 +192,7 @@ export function useChat(conversationId, currentUserId) {
       socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleDeleted);
       socket.off(SOCKET_EVENTS.INVITE_UPDATED, handleInviteUpdated);
       socket.off(SOCKET_EVENTS.MESSAGE_STATUS_UPDATED, handleStatusUpdated);
+      socket.off(SOCKET_EVENTS.MESSAGE_VIEW_ONCE_OPENED, handleViewOnceOpened);
       socket.off(SOCKET_EVENTS.USER_TYPING, handleUserTyping);
       clearTimeout(otherTypingTimer.current);
       clearTimeout(typingIdleTimer.current);
@@ -281,15 +293,17 @@ export function useChat(conversationId, currentUserId) {
 
   // Anexo de FOTO: bolha otimista com a prévia local → upload (Cloudinary) →
   // confirma com a URL salva. O backend emite new_message para o outro lado.
+  // `options`: { caption, viewOnce } vindos da tela de pré-visualização.
   const sendImage = useCallback(
-    async (asset) => {
+    async (asset, options = {}) => {
       if (!asset?.uri || !hasConversation) return false;
       const sentTo = conversationId;
       const stillHere = () => mounted.current && String(currentConversation.current) === String(sentTo);
       const tempId = nextTempId();
-      setMessages((list) => [createPendingImageMessage(tempId, asset.uri), ...list]);
+      const opts = { caption: options.caption || "", viewOnce: !!options.viewOnce };
+      setMessages((list) => [createPendingImageMessage(tempId, asset.uri, undefined, opts), ...list]);
       try {
-        const saved = await sendChatImage(conversationId, asset);
+        const saved = await sendChatImage(conversationId, asset, opts);
         if (stillHere()) setMessages((list) => confirmPendingMessage(list, tempId, saved, currentUserId));
         return true;
       } catch (err) {
@@ -312,6 +326,40 @@ export function useChat(conversationId, currentUserId) {
 
   // Convite de encontro: enviado como uma mensagem [CONVITE_EVENTO] (mesmo
   // formato do web), aparecendo como card no balão.
+  // Abre uma foto de visualização única. Devolve { url, caption } UMA vez.
+  // Socket primeiro (ack), REST como reserva. Erro com `code` = motivo
+  // ('already_opened', 'sender'...). Em qualquer resultado definitivo, a
+  // mensagem vira "Aberta" localmente.
+  const openViewOnce = useCallback(async (message) => {
+    if (!message?.isViewOnce || message.viewOnceOpened || message.isMine) {
+      const err = new Error("Esta foto não pode ser aberta.");
+      err.code = message?.isMine ? "sender" : "already_opened";
+      throw err;
+    }
+    let result;
+    if (isSocketConnected()) {
+      const ack = await emitWithAck(SOCKET_EVENTS.MARK_VIEW_ONCE_OPENED, { message_id: message.id });
+      if (!ack?.ok) {
+        const err = new Error(ack?.error || "Não foi possível abrir a foto.");
+        err.code = ack?.code || "unknown";
+        if (err.code === "already_opened") setMessages((list) => markViewOnceOpened(list, message.id));
+        throw err;
+      }
+      result = ack;
+    } else {
+      try {
+        result = await openViewOnceMessage(message.id);
+      } catch (error) {
+        const err = new Error(error?.response?.data?.error || "Não foi possível abrir a foto.");
+        err.code = error?.response?.data?.code || (error?.response?.status === 410 ? "already_opened" : "unknown");
+        if (err.code === "already_opened") setMessages((list) => markViewOnceOpened(list, message.id));
+        throw err;
+      }
+    }
+    setMessages((list) => markViewOnceOpened(list, message.id));
+    return { url: result.url, caption: result.caption || null };
+  }, []);
+
   // Marca a conversa como lida (ao focar a tela). O servidor aplica a trava
   // do Modo Discreto: se algum dos dois estiver discreto, para em entregue.
   const markAsRead = useCallback(() => {
@@ -397,6 +445,7 @@ export function useChat(conversationId, currentUserId) {
     sendInvite,
     respondToInvite,
     markAsRead,
+    openViewOnce,
     retryMessage,
     deleteForEveryone,
     hideForMe,

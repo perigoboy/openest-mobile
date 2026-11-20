@@ -7,3 +7,10 @@ export { default as VerifiedBadge } from "./VerifiedBadge"; // T023 — selo "Ve
 export { default as DiscoveryCard } from "./DiscoveryCard"; // T029 — cartão da tela de Descoberta
 
 export { ToastProvider, useToast } from "./Toast";
+
+// Design system (tema claro/escuro + padrões estilo WhatsApp)
+export { BottomSheet, ActionSheet } from "./BottomSheet";
+export { default as ImagePreviewModal } from "./ImagePreviewModal";
+export { ViewOnceCard, ViewOnceViewer } from "./ViewOnce";
+export { default as ChatWallpaper } from "./ChatWallpaper";
+export { default as ThemeSelector } from "./ThemeSelector";

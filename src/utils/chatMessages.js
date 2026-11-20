@@ -120,8 +120,11 @@ export function normalizeMessage(raw, currentUserId) {
   if (!raw || raw.id == null) return null;
   const text = typeof raw.content === "string" ? raw.content : "";
   const createdAt = raw.createdAt || raw.created_at || null;
-  const invite = parseInviteMessage(text);
-  const isImage = !invite && isImageContent(text);
+  // Foto de visualização única: a API nunca manda a URL (content = null);
+  // a tela mostra só o card "Foto"/"Aberta".
+  const isViewOnce = raw.is_view_once === true;
+  const invite = isViewOnce ? null : parseInviteMessage(text);
+  const isImage = !isViewOnce && !invite && isImageContent(text);
   return {
     id: String(raw.id),
     text,
@@ -129,9 +132,12 @@ export function normalizeMessage(raw, currentUserId) {
     createdAt,
     isMine: currentUserId != null && String(raw.sender_id) === String(currentUserId),
     isImage,
+    isViewOnce,
+    viewOnceOpened: isViewOnce && raw.is_opened === true,
+    caption: !isViewOnce && typeof raw.caption === "string" && raw.caption ? raw.caption : null,
     invite, // dados do convite de encontro (pendente) ou null
     inviteStatus: inviteStatusFromText(text), // 'accepted' | 'rejected' | null
-    location: isImage || invite ? null : parseLocationMessage(text),
+    location: isImage || invite || isViewOnce ? null : parseLocationMessage(text),
     // Citação da resposta (local; o backend não persiste — igual ao web).
     replyTo: raw.reply_to_content
       ? { content: raw.reply_to_content, sender: raw.reply_to_sender || null }
@@ -188,18 +194,42 @@ export function applyInviteResponse(list, messageId, responseStatus) {
 
 // Bolha otimista de IMAGEM: mostra a prévia local (uri do device) enquanto o
 // upload ao Cloudinary não volta.
-export function createPendingImageMessage(tempId, localUri, now = new Date()) {
+export function createPendingImageMessage(tempId, localUri, now = new Date(), { caption = null, viewOnce = false } = {}) {
   return {
     id: tempId,
-    text: localUri,
+    // Visualização única: nem a bolha de quem enviou mostra a foto.
+    text: viewOnce ? "" : localUri,
     time: formatMessageTime(now),
     createdAt: now.toISOString(),
     isMine: true,
-    isImage: true,
+    isImage: !viewOnce,
+    isViewOnce: !!viewOnce,
+    viewOnceOpened: false,
+    caption: viewOnce ? null : caption || null,
     location: null,
     replyTo: null,
     status: MESSAGE_STATUS.PENDING,
   };
+}
+
+// `message_view_once_opened` (socket) ou abertura local: vira "Aberta" e
+// não pode ser aberta de novo.
+export function markViewOnceOpened(list, messageId) {
+  return (list || []).map((message) =>
+    String(message.id) === String(messageId) && message.isViewOnce
+      ? { ...message, viewOnceOpened: true }
+      : message
+  );
+}
+
+// Texto curto para prévias (citação de resposta, lista de conversas).
+export function messagePreviewLabel(message) {
+  if (!message) return "";
+  if (message.isViewOnce) return message.viewOnceOpened ? "Foto aberta" : "Foto";
+  if (message.isImage) return message.caption || "Foto";
+  if (message.invite) return "Convite de encontro";
+  if (message.location) return "Localização";
+  return message.text || "";
 }
 
 // Mensagem que chegou pelo socket (`new_message`).
