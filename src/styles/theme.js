@@ -43,6 +43,10 @@ export const lightColors = {
   primaryPressed: "#5B21B6",
   accent: "#6D28D9", // texto/ícone roxo sobre superfície
   primarySoft: "#EDE7FB", // fundo tingido (selecionado, badge)
+  successSoft: "#E6F6EE",
+  successText: "#1E7A4C",
+  dangerSoft: "#FDECEC",
+  dangerText: "#C62828", // texto/ícone de ação destrutiva (5.6:1)
 
   // Chat
   chatBackground: "#F3F0F7",
@@ -55,6 +59,9 @@ export const lightColors = {
   bubbleReceivedMeta: "#6B6578",
   inputBg: "#FFFFFF",
   tick: "rgba(255, 255, 255, 0.8)",
+  // Checks azuis FORA do balão (lista de conversas): o #53BDEB sobre branco
+  // dá só 2.1:1; este tom passa no AA de ícones (3.7:1).
+  readTickOnSurface: "#1A8CCB",
 
   // Barra de navegação
   tabBar: "#FFFFFF",
@@ -90,6 +97,10 @@ export const darkColors = {
   primaryPressed: "#6D28D9",
   accent: "#C4B5FD",
   primarySoft: "#2A2140",
+  successSoft: "#16301F",
+  successText: "#5DD39E",
+  dangerSoft: "#3A1A21",
+  dangerText: "#FF7A7F",
 
   chatBackground: "#0B0A10",
   chatPattern: "#C4B5FD",
@@ -101,6 +112,7 @@ export const darkColors = {
   bubbleReceivedMeta: "#8E899E",
   inputBg: "#1B1824",
   tick: "rgba(244, 243, 248, 0.7)",
+  readTickOnSurface: "#53BDEB",
 
   tabBar: "#16131D",
   tabActive: "#C4B5FD",

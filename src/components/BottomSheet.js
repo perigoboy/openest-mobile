@@ -50,7 +50,7 @@ export function ActionSheet({ visible, onClose, title, subtitle, options = [], t
     <BottomSheet visible={visible} onClose={onClose} title={title} subtitle={subtitle} testID={testID}>
       <View style={styles.list}>
         {options.map((option) => {
-          const tint = option.destructive ? colors.danger : colors.accent;
+          const tint = option.destructive ? colors.dangerText : colors.accent;
           return (
             <Pressable
               key={option.key}
@@ -68,7 +68,7 @@ export function ActionSheet({ visible, onClose, title, subtitle, options = [], t
                 <Ionicons name={option.icon} size={20} color={tint} />
               </View>
               <View style={styles.rowTexts}>
-                <Text style={[styles.rowLabel, option.destructive && { color: colors.danger }]}>
+                <Text style={[styles.rowLabel, option.destructive && { color: colors.dangerText }]}>
                   {option.label}
                 </Text>
                 {option.description ? <Text style={styles.rowDescription}>{option.description}</Text> : null}
@@ -154,7 +154,7 @@ const createStyles = (colors) =>
       justifyContent: "center",
     },
     iconWrapDanger: {
-      backgroundColor: colors.scheme === "dark" ? "#3A1A21" : "#FDECEC",
+      backgroundColor: colors.dangerSoft,
     },
     rowTexts: {
       flex: 1,

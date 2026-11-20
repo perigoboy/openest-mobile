@@ -22,11 +22,17 @@ const TEXT_PAIRS = [
   ["texto da mensagem recebida", "bubbleReceivedText", "bubbleReceived"],
   ["hora da mensagem recebida", "bubbleReceivedMeta", "bubbleReceived"],
   ["texto sobre o fundo do chat", "textPrimary", "chatBackground"],
+  ["selo 'Agendado' (verde suave)", "successText", "successSoft"],
+  ["ação destrutiva (Apagar/Desistir) sobre cards", "dangerText", "surface"],
+  ["ação destrutiva sobre sheets", "dangerText", "surfaceElevated"],
+  ["ação destrutiva sobre fundo vermelho suave", "dangerText", "dangerSoft"],
 ];
 
 const ICON_PAIRS = [
   ["check cinza (enviada/entregue) sobre a minha bolha", "tick", "bubbleSent"],
   ["checks azuis (visualizada) sobre a minha bolha", "readTick", "bubbleSent"],
+  ["checks azuis na lista de conversas", "readTickOnSurface", "surface"],
+  ["checks cinzas na lista de conversas", "textTertiary", "surface"],
   ["ícone ativo da barra inferior", "tabActive", "tabBar"],
   ["ícone inativo da barra inferior", "tabInactive", "tabBar"],
   ["texto terciário / placeholder", "textTertiary", "surface"],

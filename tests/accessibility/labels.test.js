@@ -3,7 +3,7 @@
 // Regra: todo controle interativo precisa de um nome que o TalkBack/VoiceOver
 // consiga ler — seja um accessibilityLabel, seja o texto visível do botão.
 import React from "react";
-import { act, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import { GlassTabBar, TAB_LABELS } from "../../src/routes/AppRoutes";
 import Input from "../../src/components/Input";
 import NetworkErrorBanner from "../../src/components/NetworkErrorBanner";
@@ -131,8 +131,14 @@ describe("telas principais: nenhum controle sem nome", () => {
     fetchConversations.mockResolvedValue([{ id: 1, name: "Ana Lima", img: "", timestamp: "Agora", lastMessage: "Oi" }]);
     render(<Matches navigation={{ navigate: jest.fn() }} />);
 
-    expect(await screen.findByLabelText("Abrir conversa com Ana Lima")).toBeTruthy();
-    expect(screen.getByLabelText("Mais opções da conversa com Ana Lima")).toBeTruthy();
+    const linha = await screen.findByLabelText("Abrir conversa com Ana Lima");
+    // As opções ficam no toque longo; o leitor de tela as recebe como AÇÃO
+    // nomeada da linha (menu de ações do TalkBack/VoiceOver).
+    expect(linha.props.accessibilityActions).toEqual(
+      expect.arrayContaining([{ name: "longpress", label: "Mais opções da conversa com Ana Lima" }])
+    );
+    fireEvent(linha, "accessibilityAction", { nativeEvent: { actionName: "longpress" } });
+    expect(screen.getByTestId("conversation-action-unmatch")).toBeTruthy();
     expect(findUnnamedControls(screen)).toEqual([]);
   });
 

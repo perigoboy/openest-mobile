@@ -70,95 +70,73 @@ describe("Matches — Fluxo de Unmatch (T044)", () => {
     expect(screen.getByText("Carlos")).toBeTruthy();
   });
 
-  it("abre o menu de opções (ellipsis) ao clicar", async () => {
+  // As opções da conversa ficam no TOQUE LONGO (padrão WhatsApp), numa gaveta.
+  async function abrirOpcoes(id) {
+    await act(async () => {
+      fireEvent(screen.getByTestId(`conversation-${id}`), "longPress");
+    });
+  }
+
+  it("toque longo abre a gaveta com 'Desfazer match' (destrutivo)", async () => {
     render(<Matches />);
     await act(async () => {});
-    
-    await pressButton("conversation-options-1");
-    
-    // Pega a primeira chamada do Alert.alert (abertura do menu)
-    const alertCall = Alert.alert.mock.calls[0];
-    
-    expect(alertCall[0]).toBe("Opções");
-    expect(alertCall[1]).toBeUndefined();
-    
-    // Verifica que o array de botões contém a opção "Desfazer match"
-    // com style "destructive" e a opção "Cancelar"
-    const options = alertCall[2];
-    expect(options.some((opt) => opt.text === "Desfazer match" && opt.style === "destructive")).toBe(true);
-    expect(options.some((opt) => opt.text === "Cancelar" && opt.style === "cancel")).toBe(true);
+
+    await abrirOpcoes(1);
+
+    expect(screen.getByTestId("conversation-action-unmatch")).toBeTruthy();
+    expect(screen.getByText("Desfazer match")).toBeTruthy();
+    expect(screen.getByTestId("conversation-sheet-cancel")).toBeTruthy();
+    expect(Alert.alert).not.toHaveBeenCalled(); // nada de Alert para o menu
   });
 
   it("dispara unmatch com sucesso e remove a conversa da lista", async () => {
     render(<Matches />);
     await act(async () => {});
 
-    // Abre o menu de opções
-    await pressButton("conversation-options-1");
-    
-    // Pega a função onPress do botão "Desfazer match" do Alert
-    const alertOptions = Alert.alert.mock.calls[0][2];
-    const desfazerBtn = alertOptions.find((opt) => opt.text === "Desfazer match");
-    
-    // Executa a ação de desfazer
+    await abrirOpcoes(1);
     await act(async () => {
-      await desfazerBtn.onPress();
+      fireEvent.press(screen.getByTestId("conversation-action-unmatch"));
     });
 
-    // O Alert de confirmação deve aparecer
+    // A confirmação continua sendo um diálogo nativo
     expect(Alert.alert).toHaveBeenCalledWith(
       "Desfazer match",
       expect.stringContaining("Tem certeza que deseja desfazer o match com Ana Lima?"),
       expect.any(Array)
     );
 
-    // Pega a função onPress do botão "Desfazer" (confirmar) do segundo Alert
-    const confirmAlertOptions = Alert.alert.mock.calls[1][2];
+    const confirmAlertOptions = Alert.alert.mock.calls[0][2];
     const confirmBtn = confirmAlertOptions.find((opt) => opt.text === "Desfazer");
-
-    // Confirma o unmatch
     await act(async () => {
       await confirmBtn.onPress();
     });
 
-    // Verifica as chamadas de serviço
     expect(unmatch).toHaveBeenCalledWith(1);
-    
-    // Verifica se a conversa da Ana sumiu da tela
     expect(screen.queryByText("Ana Lima")).toBeNull();
     expect(screen.getByText("Carlos")).toBeTruthy();
-
-    // Verifica o Alert de sucesso
     expect(Alert.alert).toHaveBeenCalledWith(
-      "Match desfazido",
+      "Match desfeito",
       "A conversa foi removida da sua lista."
     );
   });
 
   it("exibe Alert de erro se o unmatch falhar e mantém a conversa na lista", async () => {
-    // Simula erro no backend
     unmatch.mockRejectedValueOnce({ response: { data: { error: "Erro no servidor" } } });
 
     render(<Matches />);
     await act(async () => {});
 
-    // Fluxo completo de abrir, confirmar e falhar
-    await pressButton("conversation-options-1");
-    const alertOptions = Alert.alert.mock.calls[0][2];
-    const desfazerBtn = alertOptions.find((opt) => opt.text === "Desfazer match");
-    await act(async () => { await desfazerBtn.onPress(); });
-
-    const confirmAlertOptions = Alert.alert.mock.calls[1][2];
-    const confirmBtn = confirmAlertOptions.find((opt) => opt.text === "Desfazer");
+    await abrirOpcoes(1);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("conversation-action-unmatch"));
+    });
+    const confirmBtn = Alert.alert.mock.calls[0][2].find((opt) => opt.text === "Desfazer");
     await act(async () => { await confirmBtn.onPress(); });
 
-    // O Alert de erro deve ser chamado
     expect(Alert.alert).toHaveBeenCalledWith(
       "Não foi possível desfazer o match",
       "Erro no servidor"
     );
-
-    // A conversa deve continuar na tela
     expect(screen.getByText("Ana Lima")).toBeTruthy();
   });
 });

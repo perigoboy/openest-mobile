@@ -7,8 +7,8 @@
 //   • Meus dados (LGPD)   — baixar dados (GET) e excluir conta (DELETE) — T024
 //   • Sair                — logout ligado ao signOut do AuthContext (T009)
 //
-// Visual segue o mesmo padrão da tela de Perfil (T018): fundo em gradiente
-// roxo escuro, cartões brancos e botões com gradiente.
+// Visual: lista agrupada estilo ajustes do iOS/WhatsApp, acompanhando o tema
+// claro/escuro. A seção Aparência traz o seletor Claro/Escuro/Automático.
 
 import React, { useEffect, useState } from "react";
 import {
@@ -23,11 +23,10 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Image,
   ActivityIndicator,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { setNotificationsEnabledAsync } from "../../services/notifications"; // T048
@@ -36,22 +35,28 @@ import { File, Paths } from "expo-file-system"; // T024 — grava o JSON exporta
 import api from "../../services/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { useToast } from "../../components";
-import { colors, spacing, typography } from "../../styles/theme";
+import ThemeSelector from "../../components/ThemeSelector";
+import { useTheme, useThemedStyles } from "../../contexts/ThemeContext";
+import { radius, spacing, typography } from "../../styles/theme";
 
 // Chave da preferência de notificações salva no SecureStore (só aceita strings).
 const NOTIFICATIONS_KEY = "notifications_enabled";
 const MIN_PASSWORD_LENGTH = 6;
 
 // Linha de menu reutilizada pelos grupos da tela.
-function MenuRow({ testID, icon, title, subtitle, onPress, right }) {
+function MenuRow({ testID, icon, title, subtitle, onPress, right, destructive }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const content = (
     <>
-      <Ionicons name={icon} size={22} color={colors.primary} style={styles.rowIcon} />
-      <View style={styles.rowTexts}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowSubtitle}>{subtitle}</Text>
+      <View style={[styles.rowIcon, destructive && styles.rowIconDanger]}>
+        <Ionicons name={icon} size={18} color={destructive ? colors.dangerText : colors.accent} />
       </View>
-      {right ? right : <Ionicons name="chevron-forward" size={18} color="#b2bec3" />}
+      <View style={styles.rowTexts}>
+        <Text style={[styles.rowTitle, destructive && { color: colors.dangerText }]}>{title}</Text>
+        {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
+      </View>
+      {right !== undefined ? right : <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />}
     </>
   );
 
@@ -60,21 +65,22 @@ function MenuRow({ testID, icon, title, subtitle, onPress, right }) {
   }
 
   return (
-    <TouchableOpacity
+    <Pressable
       testID={testID}
-      style={styles.row}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       onPress={onPress}
-      activeOpacity={0.7}
       accessibilityRole="button"
     >
       {content}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
 export default function Settings({ navigation }) {
   const { signOut } = useAuth();
   const toast = useToast();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
@@ -269,83 +275,86 @@ export default function Settings({ navigation }) {
     ]);
   }
   return (
-    <LinearGradient colors={["#2c003e", "#1a0026", "#0d0012"]} style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Topo / Logo + título */}
-          <View style={styles.logoContainer}>
-            <Image 
-              source={require('../../../assets/logo-texto.png')} 
-              style={{ width: 120, height: 32 }} 
-              resizeMode="contain" 
-            />
-            <Text style={styles.screenTitle}>Configurações</Text>
-          </View>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <Text style={styles.screenTitle} accessibilityRole="header">Configurações</Text>
 
-          {/* Grupo: Preferências */}
-          <Text style={styles.sectionTitle}>PREFERÊNCIAS</Text>
-          <View style={styles.card}>
-            <MenuRow
-              testID="row-notifications"
-              icon="notifications-outline"
-              title="Notificações"
-              subtitle="Alertas de novos matches e mensagens"
-              right={
-                <Switch
-                  testID="switch-notifications"
-                  value={notificationsEnabled}
-                  onValueChange={handleToggleNotifications}
-                  trackColor={{ false: "#b2bec3", true: colors.primaryLight }}
-                  thumbColor={colors.white}
-                />
-              }
-            />
-          </View>
+        {/* Grupo: Preferências */}
+        <Text style={styles.sectionTitle}>PREFERÊNCIAS</Text>
+        <View style={styles.card}>
+          <MenuRow
+            testID="row-notifications"
+            icon="notifications-outline"
+            title="Notificações"
+            subtitle="Alertas de novos matches e mensagens"
+            right={
+              <Switch
+                testID="switch-notifications"
+                value={notificationsEnabled}
+                onValueChange={handleToggleNotifications}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor={colors.white}
+                ios_backgroundColor={colors.border}
+              />
+            }
+          />
+        </View>
 
-          {/* Grupo: Conta */}
-          <Text style={styles.sectionTitle}>CONTA</Text>
-          <View style={styles.card}>
-            <MenuRow
-              testID="btn-change-password"
-              icon="lock-closed-outline"
-              title="Alterar senha"
-              subtitle="Atualize a senha da sua conta"
-              onPress={() => setPasswordModalVisible(true)}
-            />
-            <View style={styles.divider} />
-            <MenuRow
-              testID="btn-photo-verification"
-              icon="camera-outline"
-              title="Verificação de foto"
-              subtitle="Envie uma selfie para confirmar seu perfil"
-              onPress={handlePhotoVerification}
-            />
-            <View style={styles.divider} />
-            <MenuRow
-              testID="btn-data-privacy"
-              icon="shield-checkmark-outline"
-              title="Meus dados (LGPD)"
-              subtitle="Baixar meus dados ou excluir a conta"
-              onPress={handleDataPrivacy}
-            />
-          </View>
+        {/* Grupo: Aparência (tema) */}
+        <Text style={styles.sectionTitle}>APARÊNCIA</Text>
+        <View style={[styles.card, styles.cardPadded]}>
+          <ThemeSelector />
+          <Text style={styles.cardHint}>
+            Automático acompanha o tema do seu celular. A escolha fica salva neste aparelho.
+          </Text>
+        </View>
 
-          {/* Grupo: Sessão */}
-          <Text style={styles.sectionTitle}>SESSÃO</Text>
-          <TouchableOpacity
+        {/* Grupo: Conta */}
+        <Text style={styles.sectionTitle}>CONTA</Text>
+        <View style={styles.card}>
+          <MenuRow
+            testID="btn-change-password"
+            icon="lock-closed-outline"
+            title="Alterar senha"
+            subtitle="Atualize a senha da sua conta"
+            onPress={() => setPasswordModalVisible(true)}
+          />
+          <View style={styles.divider} />
+          <MenuRow
+            testID="btn-photo-verification"
+            icon="camera-outline"
+            title="Verificação de foto"
+            subtitle="Envie uma selfie para confirmar seu perfil"
+            onPress={handlePhotoVerification}
+          />
+          <View style={styles.divider} />
+          <MenuRow
+            testID="btn-data-privacy"
+            icon="shield-checkmark-outline"
+            title="Meus dados (LGPD)"
+            subtitle="Baixar meus dados ou excluir a conta"
+            onPress={handleDataPrivacy}
+          />
+        </View>
+
+        {/* Grupo: Sessão */}
+        <Text style={styles.sectionTitle}>SESSÃO</Text>
+        <View style={styles.card}>
+          <Pressable
             testID="btn-signout"
-            style={styles.signOutWrapper}
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
             onPress={handleSignOut}
-            activeOpacity={0.8}
             accessibilityRole="button"
+            accessibilityLabel="Sair da conta"
             disabled={signingOut}
           >
-            <LinearGradient colors={["#e74c3c", "#c0392b"]} style={styles.signOutButton}>
-              <Text style={styles.signOutText}>{signingOut ? "SAINDO..." : "SAIR"}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
+            <View style={[styles.rowIcon, styles.rowIconDanger]}>
+              <Ionicons name="log-out-outline" size={18} color={colors.dangerText} />
+            </View>
+            <Text style={[styles.rowTitle, styles.signOutText]}>{signingOut ? "Saindo..." : "Sair da conta"}</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
 
       {/* Modal: alterar senha */}
       {passwordModalVisible && (
@@ -368,7 +377,8 @@ export default function Settings({ navigation }) {
                 testID="input-current-password"
                 style={styles.modalInput}
                 placeholder="Sua senha atual"
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.textTertiary}
+                selectionColor={colors.primary}
                 secureTextEntry
                 autoCapitalize="none"
                 value={currentPassword}
@@ -381,7 +391,8 @@ export default function Settings({ navigation }) {
                 testID="input-new-password"
                 style={styles.modalInput}
                 placeholder="Mínimo de 6 caracteres"
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.textTertiary}
+                selectionColor={colors.primary}
                 secureTextEntry
                 autoCapitalize="none"
                 value={newPassword}
@@ -394,33 +405,31 @@ export default function Settings({ navigation }) {
                 testID="input-confirm-password"
                 style={styles.modalInput}
                 placeholder="Repita a nova senha"
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.textTertiary}
+                selectionColor={colors.primary}
                 secureTextEntry
                 autoCapitalize="none"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
               />
 
-              <TouchableOpacity
+              <Pressable
                 testID="btn-submit-password"
-                style={styles.modalButtonWrapper}
+                style={({ pressed }) => [styles.modalButton, pressed && { backgroundColor: colors.primaryPressed }]}
                 onPress={handleChangePassword}
-                activeOpacity={0.8}
                 accessibilityRole="button"
               >
-                <LinearGradient colors={["#7b2cbf", "#5a189a", "#3c096c"]} style={styles.modalButton}>
-                  <Text style={styles.modalButtonText}>SALVAR</Text>
-                </LinearGradient>
-              </TouchableOpacity>
+                <Text style={styles.modalButtonText}>Salvar</Text>
+              </Pressable>
 
-              <TouchableOpacity
+              <Pressable
                 testID="btn-cancel-password"
                 style={styles.cancelButton}
                 onPress={handleClosePasswordModal}
                 accessibilityRole="button"
               >
                 <Text style={styles.cancelText}>Cancelar</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </KeyboardAvoidingView>
         </Modal>
@@ -445,208 +454,199 @@ export default function Settings({ navigation }) {
                 definitivamente. A exclusão é imediata e não pode ser desfeita.
               </Text>
 
-              <TouchableOpacity
+              <Pressable
                 testID="btn-download-data"
-                style={styles.modalButtonWrapper}
+                style={({ pressed }) => [styles.modalButton, pressed && { backgroundColor: colors.primaryPressed }]}
                 onPress={handleExportData}
                 disabled={exporting || deleting}
-                activeOpacity={0.8}
                 accessibilityRole="button"
               >
-                <LinearGradient
-                  colors={["#7b2cbf", "#5a189a", "#3c096c"]}
-                  style={styles.modalButton}
-                >
-                  {exporting ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.modalButtonText}>BAIXAR MEUS DADOS</Text>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
+                {exporting ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.modalButtonText}>Baixar meus dados</Text>
+                )}
+              </Pressable>
 
-              <TouchableOpacity
+              <Pressable
                 testID="btn-delete-account"
-                style={styles.deleteButtonWrapper}
+                style={({ pressed }) => [styles.modalButton, styles.deleteButton, pressed && { opacity: 0.85 }]}
                 onPress={handleDeleteAccount}
                 disabled={exporting || deleting}
-                activeOpacity={0.8}
                 accessibilityRole="button"
               >
-                <LinearGradient colors={["#e74c3c", "#c0392b"]} style={styles.modalButton}>
-                  {deleting ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.modalButtonText}>EXCLUIR CONTA</Text>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={[styles.modalButtonText, styles.deleteButtonText]}>Excluir conta</Text>
+                )}
+              </Pressable>
 
-              <TouchableOpacity
+              <Pressable
                 testID="btn-cancel-privacy"
                 style={styles.cancelButton}
                 onPress={handleClosePrivacyModal}
                 accessibilityRole="button"
               >
                 <Text style={styles.cancelText}>Fechar</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </KeyboardAvoidingView>
         </Modal>
       )}
-    </LinearGradient>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scrollContent: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
-  logoContainer: {
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-    alignItems: "center",
-  },
-  logoText: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#fff",
-    letterSpacing: 2,
-  },
-  screenTitle: {
-    ...typography.h2,
-    color: "#fff",
-    marginTop: spacing.sm,
-  },
-  sectionTitle: {
-    ...typography.caption,
-    color: "#d7b8e8",
-    fontWeight: "700",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  card: {
-    backgroundColor: "rgba(255,255,255,0.96)",
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    minHeight: 64,
-  },
-  rowIcon: { marginRight: spacing.md },
-  rowTexts: { flex: 1 },
-  rowTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#2d3436",
-  },
-  rowSubtitle: {
-    fontSize: 12,
-    color: "#636e72",
-    marginTop: 2,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#ebedf0",
-    marginLeft: 56,
-  },
-  signOutWrapper: {
-    borderRadius: 12,
-    overflow: "hidden",
-    marginTop: spacing.sm,
-  },
-  signOutButton: {
-    height: 48,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  signOutText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "bold",
-    letterSpacing: 1,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    paddingHorizontal: spacing.lg,
-  },
-  modalCard: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: spacing.lg,
-  },
-  modalTitle: {
-    ...typography.h3,
-    color: "#2d3436",
-    textAlign: "center",
-    marginBottom: spacing.md,
-  },
-  modalLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#576574",
-    marginBottom: spacing.xs,
-  },
-  modalInput: {
-    backgroundColor: "#f1f2f6",
-    height: 48,
-    borderRadius: 12,
-    paddingHorizontal: spacing.md,
-    fontSize: 14,
-    marginBottom: spacing.md,
-    color: "#2d3436",
-  },
-  modalButtonWrapper: {
-    borderRadius: 12,
-    overflow: "hidden",
-    marginTop: spacing.xs,
-  },
-  modalButton: {
-    height: 48,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalButtonText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "bold",
-    letterSpacing: 1,
-  },
-  cancelButton: {
-    marginTop: spacing.md,
-    alignItems: "center",
-    paddingVertical: spacing.sm,
-  },
-  cancelText: {
-    fontSize: 14,
-    color: "#636e72",
-    fontWeight: "600",
-  },
-  // T024 — modal de LGPD
-  privacyText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#636e72",
-    marginBottom: spacing.md,
-  },
-  deleteButtonWrapper: {
-    borderRadius: 12,
-    overflow: "hidden",
-    marginTop: spacing.sm,
-  },
-});
-
-
-
-
+const createStyles = (colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    scrollContent: {
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.xl,
+    },
+    screenTitle: {
+      ...typography.h1,
+      color: colors.textPrimary,
+      marginTop: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    sectionTitle: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      fontWeight: "600",
+      letterSpacing: 0.6,
+      marginTop: spacing.lg,
+      marginBottom: spacing.sm,
+      marginLeft: spacing.xs,
+    },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      overflow: "hidden",
+    },
+    cardPadded: {
+      padding: spacing.md,
+    },
+    cardHint: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      marginTop: spacing.sm,
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      columnGap: 12,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 12,
+      minHeight: 60,
+    },
+    rowPressed: {
+      backgroundColor: colors.surfaceMuted,
+    },
+    rowIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 9,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.primarySoft,
+    },
+    rowIconDanger: {
+      backgroundColor: colors.dangerSoft,
+    },
+    rowTexts: { flex: 1 },
+    rowTitle: {
+      ...typography.body,
+      fontWeight: "500",
+      color: colors.textPrimary,
+    },
+    rowSubtitle: {
+      ...typography.caption,
+      fontSize: 13,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    divider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.divider,
+      marginLeft: spacing.md + 32 + 12,
+    },
+    signOutText: {
+      color: colors.dangerText,
+      fontWeight: "600",
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: "center",
+      paddingHorizontal: spacing.lg,
+    },
+    modalCard: {
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: radius.xl,
+      padding: spacing.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    modalTitle: {
+      ...typography.h3,
+      color: colors.textPrimary,
+      textAlign: "center",
+      marginBottom: spacing.md,
+    },
+    modalLabel: {
+      ...typography.label,
+      color: colors.textSecondary,
+      marginBottom: 6,
+    },
+    modalInput: {
+      backgroundColor: colors.inputBg,
+      height: 48,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: spacing.md,
+      ...typography.body,
+      marginBottom: spacing.md,
+      color: colors.textPrimary,
+    },
+    modalButton: {
+      height: 48,
+      borderRadius: radius.md,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: colors.primary,
+      marginTop: spacing.xs,
+    },
+    modalButtonText: {
+      ...typography.bodyStrong,
+      color: colors.onPrimary,
+    },
+    deleteButton: {
+      backgroundColor: colors.dangerDark,
+      marginTop: spacing.sm,
+    },
+    deleteButtonText: {
+      color: "#FFFFFF",
+    },
+    cancelButton: {
+      marginTop: spacing.md,
+      alignItems: "center",
+      paddingVertical: spacing.sm,
+    },
+    cancelText: {
+      ...typography.bodyStrong,
+      color: colors.textSecondary,
+    },
+    // T024 — modal de LGPD
+    privacyText: {
+      ...typography.body,
+      fontSize: 14,
+      lineHeight: 20,
+      color: colors.textSecondary,
+      marginBottom: spacing.md,
+    },
+  });
